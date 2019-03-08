@@ -1,3 +1,5 @@
+#!/bin/bash
+
 : '
 Goal: 
 run the following as long as it outputs a file indicating to continue

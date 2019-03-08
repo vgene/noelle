@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include <thread>
@@ -51,6 +51,34 @@ LoopDependenceInfo::LoopDependenceInfo(
   for (auto bb : l->blocks()) {
     loopBBtoPD[&*bb] = pdt.getNode(&*bb)->getIDom()->getBlock();
   }
+};
+
+LoopDependenceInfo::LoopDependenceInfo(PDG *lG, Loop *l, LoopInfo &li,
+                                       PostDominatorTree &pdt)
+    : loopDG{lG}, DOALLChunkSize{8}, maximumNumberOfCoresForTheParallelization{
+                                         std::thread::hardware_concurrency()} {
+
+  this->function = l->getHeader()->getParent();
+
+  this->fetchLoopAndBBInfo(li, l);
+
+  for (auto bb : l->blocks()) {
+    loopBBtoPD[&*bb] = pdt.getNode(&*bb)->getIDom()->getBlock();
+  }
+
+  environment = new LoopEnvironment(loopDG, this->loopExitBlocks);
+
+  /*
+   * Build a SCCDAG of loop-internal instructions
+   */
+  std::vector<Value *> loopInternals;
+  for (auto internalNode : loopDG->internalNodePairs()) {
+    loopInternals.push_back(internalNode.first);
+  }
+  loopInternalDG = loopDG->createSubgraphFromValues(loopInternals, false);
+  loopSCCDAG = SCCDAG::createSCCDAGFrom(loopInternalDG);
+
+  mergeTrivialNodesInSCCDAG();
 };
 
 LoopDependenceInfo::~LoopDependenceInfo() {
@@ -194,7 +222,7 @@ void LoopDependenceInfo::mergeSingleSyntacticSugarInstrs () {
     }
   }
 
-  for (auto sccNodes : singles) { 
+  for (auto sccNodes : singles) {
     this->loopSCCDAG->mergeSCCs(*sccNodes);
     delete sccNodes;
   }

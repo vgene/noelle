@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #pragma once
@@ -24,7 +24,7 @@ namespace llvm {
   template <class T>
   struct DGDOTNodeTraits : public DefaultDOTGraphTraits {
     explicit DGDOTNodeTraits(bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
-    
+
     std::string getNodeLabel(DGNode<T> *node, DGNode<T> *entry) {
       return node->toString();
     }
@@ -51,13 +51,16 @@ namespace llvm {
 
     static std::string getEdgeAttributes(DGNode<T> *node, typename std::vector<DGNode<T> *>::iterator nodeIter, DG *dg) {
       auto edge = node->getEdgeInstance(nodeIter - node->begin_outgoing_nodes());
-      const std::string cntColor = "color=blue";
-      const std::string memColor = "color=red";
-      const std::string varColor = "color=black";
-      return edge->isControlDependence() ? cntColor : (edge->isMemoryDependence() ? memColor : varColor);
+      //const std::string cntColor = "color=blue";
+      //const std::string memColor = "color=red";
+      //const std::string varColor = "color=black";
+      const std::string iiColor = "color=blue";
+      const std::string lcColor = "color=red";
+      //return edge->isControlDependence() ? cntColor : (edge->isMemoryDependence() ? memColor : varColor);
+      return edge->isLoopCarriedDependence() ? lcColor : iiColor;
     }
   };
-  
+
   /*
    * Program Dependence Graph DOTGraphTraits specialization
    */
@@ -113,11 +116,11 @@ namespace llvm {
       return dg->end_nodes();
     }
 
-    static ChildIteratorType child_begin(NodeRef node) { 
-      return node->begin_outgoing_nodes(); 
+    static ChildIteratorType child_begin(NodeRef node) {
+      return node->begin_outgoing_nodes();
     }
 
-    static ChildIteratorType child_end(NodeRef node) { 
+    static ChildIteratorType child_end(NodeRef node) {
       return node->end_outgoing_nodes();
     }
   };

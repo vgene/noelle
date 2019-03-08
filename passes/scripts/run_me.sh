@@ -10,7 +10,7 @@ fi
 rm -rf build/ ; 
 mkdir build ; 
 cd build ; 
-cmake3 -DCMAKE_INSTALL_PREFIX="${installDir}" -DCMAKE_BUILD_TYPE=Debug ../ ; 
+cmake -DCMAKE_CXX_FLAGS=-D_GLIBCXX_USE_CXX11_ABI=0 -DCMAKE_INSTALL_PREFIX="${installDir}" -DCMAKE_BUILD_TYPE=Debug ../ ; 
 make ;
 make install ;
 cd ../

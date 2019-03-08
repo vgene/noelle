@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "llvm/Pass.h"
@@ -39,7 +39,7 @@ void llvm::PDG::populateNodesOf (Module &M) {
     addNodesOf(F);
   }
 
-  /* 
+  /*
    * Set the entry node: the first instruction of the function "main"
    */
   auto mainF = M.getFunction("main");
@@ -68,8 +68,27 @@ void llvm::PDG::setEntryPointAt (Function &F) {
   assert(entryNode != nullptr);
 }
 
-llvm::DGEdge<Value> * llvm::PDG::addEdge (Value *from, Value *to) { 
-  return this->DG<Value>::addEdge(from, to); 
+void llvm::PDG::populateNodesOf (Loop *loop) {
+  addNodesOf(loop);
+  setEntryPointAt(loop);
+}
+
+void llvm::PDG::addNodesOf (Loop *loop) {
+  for (auto bbi = loop->block_begin(); bbi != loop->block_end(); ++bbi) {
+    for (auto &I : **bbi) {
+      addNode(cast<Value>(&I), /*inclusion=*/ true);
+    }
+  }
+}
+
+void llvm::PDG::setEntryPointAt (Loop *loop) {
+  BasicBlock *bbBegin = *(loop->block_begin());
+  entryNode = internalNodeMap[&*(bbBegin->begin())];
+  assert(entryNode != nullptr);
+}
+
+llvm::DGEdge<Value> * llvm::PDG::addEdge (Value *from, Value *to) {
+  return this->DG<Value>::addEdge(from, to);
 }
 
 PDG *llvm::PDG::createFunctionSubgraph(Function &F) {
@@ -81,7 +100,7 @@ PDG *llvm::PDG::createFunctionSubgraph(Function &F) {
    */
   functionPDG->addNodesOf(F);
 
-  /* 
+  /*
    * Set the entry node: the first instruction of function F
    */
   functionPDG->setEntryPointAt(F);
@@ -100,18 +119,12 @@ PDG *llvm::PDG::createLoopsSubgraph(Loop *loop) {
   /*
    * Create a node per instruction within loops of LI only
    */
-  for (auto bbi = loop->block_begin(); bbi != loop->block_end(); ++bbi) {
-    for (auto &I : **bbi) {
-      loopsPDG->addNode(cast<Value>(&I), /*inclusion=*/ true);
-    }
-  }
+  loopsPDG->addNodesOf(loop);
 
   /*
    * Set the entry node: the first instruction of one of the top level loops (See include/llvm/Analysis/LoopInfo.h:653)
    */
-  BasicBlock *bbBegin = *(loop->block_begin());
-  loopsPDG->entryNode = loopsPDG->internalNodeMap[&*(bbBegin->begin())];
-  assert(loopsPDG->entryNode != nullptr);
+  loopsPDG->setEntryPointAt(loop);
 
   /*
    * Recreate all edges connected to internal nodes of loop
@@ -149,7 +162,7 @@ void llvm::PDG::copyEdgesInto(PDG *newPDG, bool linkToExternal) {
     bool toInclusion = newPDG->isInternal(toT);
     if (!fromInclusion && !toInclusion) continue;
     if (!linkToExternal && (!fromInclusion || !toInclusion)) continue;
-    
+
     /*
      * Create appropriate external nodes and associate edge to them
      */
