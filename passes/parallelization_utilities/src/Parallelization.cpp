@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include <unordered_map>
@@ -75,7 +75,7 @@ std::vector<Function *> * llvm::Parallelization::getModuleFunctionsReachableFrom
    */
   auto &callGraph = getAnalysis<CallGraphWrapperPass>().getCallGraph();
 
-  /* 
+  /*
    * Compute the set of functions reachable from the starting point.
    */
   std::set<Function *> funcSet ;
@@ -420,6 +420,9 @@ void llvm::Parallelization::linkParallelizedLoopToOriginalFunction (
   SmallVector<BasicBlock *, 10> &loopExitBlocks
   ){
 
+  IntegerType *int32 = IntegerType::get(module->getContext(), 32);
+  IntegerType *int64 = IntegerType::get(module->getContext(), 64);
+
   /*
    * Create the global variable for the parallelized loop.
    */
@@ -536,7 +539,7 @@ uint32_t llvm::Parallelization::fetchTheNextValue (std::stringstream &stream){
 
   return currentValueRead;
 }
-      
+
 bool Parallelization::filterOutLoops (
   char *fileName,
   std::vector<uint32_t>& loopThreads,
@@ -628,7 +631,7 @@ bool Parallelization::filterOutLoops (
       DOALLChunkSize.push_back(0);
     }
   }
-  
+
   return filterLoops;
 }
 
