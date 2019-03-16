@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #pragma once
@@ -69,7 +69,7 @@ namespace llvm {
        * - one basic block per loop exit, which will jump to the exit block
        */
       virtual void generateEmptyTasks (
-        LoopDependenceInfo *LDI, 
+        LoopDependenceInfo *LDI,
         std::vector<Task *> taskStructs
       );
 
@@ -110,12 +110,12 @@ namespace llvm {
        * Task helpers for environment usage
        */
       virtual void generateCodeToLoadLiveInVariables (
-        LoopDependenceInfo *LDI, 
+        LoopDependenceInfo *LDI,
         int taskIndex
       );
 
       virtual void generateCodeToStoreLiveOutVariables (
-        LoopDependenceInfo *LDI, 
+        LoopDependenceInfo *LDI,
         int taskIndex
       );
 
@@ -168,7 +168,8 @@ namespace llvm {
       /*
        * Parallel task related information.
        */
-      Function *taskDispatcher;
+      //Function *taskDispatcher;
+      Constant *taskDispatcher;
       FunctionType *taskType;
       BasicBlock *entryPointOfParallelizedLoop, *exitPointOfParallelizedLoop;
       std::vector<Task *> tasks;

@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "DOALL.hpp"
@@ -21,11 +21,29 @@ DOALL::DOALL (
   /*
    * Fetch the dispatcher to use to jump to a parallelized DOALL loop.
    */
-  this->taskDispatcher = this->module.getFunction("doallDispatcher");
 
   auto &cxt = module.getContext();
   auto int8 = IntegerType::get(cxt, 8);
   auto int64 = IntegerType::get(cxt, 64);
+  auto voidty = Type::getVoidTy(cxt);
+  auto chunkerArgsTy =  ArrayRef<Type*>({
+    PointerType::getUnqual(int8),
+    int64,
+    int64,
+    int64
+  });
+  FunctionType *chunkerty = FunctionType::get(voidty, chunkerArgsTy, false);
+
+  auto doallDispArgsTy =  ArrayRef<Type*>({
+    PointerType::getUnqual(chunkerty),
+    PointerType::getUnqual(int8),
+    int64,
+    int64
+  });
+  FunctionType *doalldispty = FunctionType::get(voidty, doallDispArgsTy, false);
+
+  this->taskDispatcher = this->module.getOrInsertFunction("doallDispatcher", doalldispty);
+
   auto funcArgTypes = ArrayRef<Type*>({
     PointerType::getUnqual(int8),
     int64,
@@ -37,10 +55,13 @@ DOALL::DOALL (
   return ;
 }
 
+bool DOALL::canBeAppliedToLoop(LoopDependenceInfo *LDI, Parallelization &par,
+                               Heuristics *h) const {
+  return canBeAppliedToLoop(LDI);
+}
+
 bool DOALL::canBeAppliedToLoop (
-  LoopDependenceInfo *LDI,
-  Parallelization &par,
-  Heuristics *h
+  LoopDependenceInfo *LDI
 ) const {
   if (this->verbose != Verbosity::Disabled) {
     errs() << "DOALL: Checking if is a doall loop\n";
@@ -49,7 +70,7 @@ bool DOALL::canBeAppliedToLoop (
   /*
    * The loop must have one single exit path.
    */
-  if (LDI->numberOfExits() > 1) { 
+  if (LDI->numberOfExits() > 1) {
     if (this->verbose != Verbosity::Disabled) {
       errs() << "DOALL:   More than 1 loop exit blocks\n";
     }
@@ -115,11 +136,14 @@ bool DOALL::canBeAppliedToLoop (
   }
   return true;
 }
-      
+
+bool DOALL::apply(LoopDependenceInfo * LDI, Parallelization & par,
+                  Heuristics * h) {
+  return apply(LDI);
+}
+
 bool DOALL::apply (
-  LoopDependenceInfo *LDI,
-  Parallelization &par,
-  Heuristics *h
+  LoopDependenceInfo *LDI
 ) {
 
   /*
@@ -202,7 +226,7 @@ bool DOALL::apply (
    */
   this->generateCodeToStoreLiveOutVariables(LDI, 0);
 
-  addChunkFunctionExecutionAsideOriginalLoop(LDI, par);
+  addChunkFunctionExecutionAsideOriginalLoop(LDI);
 
   if (this->verbose >= Verbosity::Maximal) {
     tasks[0]->F->print(errs() << "DOALL:  Finalized chunker:\n"); errs() << "\n";
@@ -246,9 +270,16 @@ void DOALL::propagateLiveOutEnvironment (LoopDependenceInfo *LDI) {
   return ;
 }
 
+
 void DOALL::addChunkFunctionExecutionAsideOriginalLoop (
   LoopDependenceInfo *LDI,
   Parallelization &par
+) {
+  addChunkFunctionExecutionAsideOriginalLoop(LDI);
+}
+
+void DOALL::addChunkFunctionExecutionAsideOriginalLoop (
+  LoopDependenceInfo *LDI
 ) {
 
   /*
@@ -262,6 +293,9 @@ void DOALL::addChunkFunctionExecutionAsideOriginalLoop (
   this->allocateEnvironmentArray(LDI);
   this->populateLiveInEnvironment(LDI);
 
+  Module *mod = LDI->function->getParent();
+  IntegerType *int64 = IntegerType::get(mod->getContext(), 64);
+
   /*
    * Fetch the pointer to the environment.
    */
@@ -270,12 +304,12 @@ void DOALL::addChunkFunctionExecutionAsideOriginalLoop (
   /*
    * Fetch the number of cores
    */
-  auto numCores = ConstantInt::get(par.int64, LDI->maximumNumberOfCoresForTheParallelization);
+  auto numCores = ConstantInt::get(int64, LDI->maximumNumberOfCoresForTheParallelization);
 
   /*
    * Fetch the chunk size.
    */
-  auto chunkSize = ConstantInt::get(par.int64, LDI->DOALLChunkSize);
+  auto chunkSize = ConstantInt::get(int64, LDI->DOALLChunkSize);
 
   /*
    * Call the function that incudes the parallelized loop.

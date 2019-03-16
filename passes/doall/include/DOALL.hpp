@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #pragma once
@@ -39,12 +39,15 @@ namespace llvm {
         Heuristics *h
       ) override ;
 
+      bool apply(LoopDependenceInfo *LDI);
+
       bool canBeAppliedToLoop (
         LoopDependenceInfo *LDI,
         Parallelization &par,
         Heuristics *h
       ) const override ;
 
+      bool canBeAppliedToLoop(LoopDependenceInfo *LDI) const;
 
     protected:
 
@@ -70,6 +73,9 @@ namespace llvm {
       void addChunkFunctionExecutionAsideOriginalLoop (
         LoopDependenceInfo *LDI,
         Parallelization &par
+      );
+      void addChunkFunctionExecutionAsideOriginalLoop (
+        LoopDependenceInfo *LDI
       );
   };
 

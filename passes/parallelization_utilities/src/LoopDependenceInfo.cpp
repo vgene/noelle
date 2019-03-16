@@ -56,7 +56,7 @@ LoopDependenceInfo::LoopDependenceInfo(
 LoopDependenceInfo::LoopDependenceInfo(PDG *lG, Loop *l, LoopInfo &li,
                                        PostDominatorTree &pdt)
     : loopDG{lG}, DOALLChunkSize{8}, maximumNumberOfCoresForTheParallelization{
-                                         std::thread::hardware_concurrency()} {
+                                         std::thread::hardware_concurrency()/2} {
 
   this->function = l->getHeader()->getParent();
 

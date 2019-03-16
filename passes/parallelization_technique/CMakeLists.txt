@@ -32,4 +32,4 @@ include(AddLLVM)
 add_subdirectory(src)
 
 # Install
-install(PROGRAMS include/ParallelizationTechnique.hpp include/ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences.hpp DESTINATION include)
+install(PROGRAMS include/ParallelizationTechnique.hpp include/ParallelizationTechniqueForLoopsWithLoopCarriedDataDependences.hpp include/TaskExecution.hpp DESTINATION include)

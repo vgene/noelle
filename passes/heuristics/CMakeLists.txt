@@ -28,4 +28,4 @@ include(AddLLVM)
 add_subdirectory(src)
 
 # Install
-install(PROGRAMS include/HeuristicsPass.hpp include/Heuristics.hpp DESTINATION include)
+install(PROGRAMS include/HeuristicsPass.hpp include/Heuristics.hpp include/MinMaxSizePartitionAnalysis.hpp include/PartitionCostAnalysis.hpp include/SmallestSizePartitionAnalysis.hpp include/InvocationLatency.hpp DESTINATION include)
