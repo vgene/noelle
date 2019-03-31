@@ -32,4 +32,4 @@ include(AddLLVM)
 add_subdirectory(src)
 
 # Install
-install(PROGRAMS include/DOALL.hpp DESTINATION include)
+install(PROGRAMS include/DOALL.hpp src/DOALLTask.hpp DESTINATION include)

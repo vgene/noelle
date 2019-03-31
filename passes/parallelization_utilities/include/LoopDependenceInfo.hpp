@@ -42,6 +42,7 @@ namespace llvm {
     /*
      * Loop
      */
+    Loop *loop;
     std::vector<BasicBlock *> loopBBs;
     unordered_map<BasicBlock *, BasicBlock *> loopBBtoPD;
 

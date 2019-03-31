@@ -51,7 +51,15 @@ namespace llvm {
       BasicBlock *getParLoopEntryPoint () { return entryPointOfParallelizedLoop; }
       BasicBlock *getParLoopExitPoint () { return exitPointOfParallelizedLoop; }
 
+      std::unordered_set<Value *> &getReduxArrAllocs() {
+        return envBuilder->getReduxArrAllocs();
+      }
+
+      Constant *getTaskDispatcher () { return taskDispatcher; }
+
       virtual void reset () ;
+
+      std::vector<Task *> &getTasks(){return tasks;};
 
       /*
        * Destructor.

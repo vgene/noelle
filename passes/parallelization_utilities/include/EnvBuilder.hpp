@@ -19,6 +19,7 @@
 #include "LoopEnvironment.hpp"
 
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <set>
 
@@ -109,7 +110,11 @@ namespace llvm {
     Value *getReducableEnvVar (int ind, int reducerInd) ;
     bool isReduced (int ind) ;
 
-   private:
+    std::unordered_set<Value *> &getReduxArrAllocs() {
+      return reductionArrAllocas;
+    }
+
+  private:
 
     /*
      * The environment array, owned by this builder
@@ -132,6 +137,11 @@ namespace llvm {
      * Information on a specific user (a function, stage, chunk, etc...)
      */
     std::vector<EnvUserBuilder *> envUsers;
+
+    /*
+     * Allocated arrays for reducible variables
+     */
+    std::unordered_set<Value*> reductionArrAllocas;
   };
 
 }

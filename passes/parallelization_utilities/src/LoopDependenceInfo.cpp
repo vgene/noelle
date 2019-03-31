@@ -59,6 +59,7 @@ LoopDependenceInfo::LoopDependenceInfo(PDG *lG, Loop *l, LoopInfo &li,
                                          std::thread::hardware_concurrency()/2} {
 
   this->function = l->getHeader()->getParent();
+  this->loop = l;
 
   this->fetchLoopAndBBInfo(li, l);
 
