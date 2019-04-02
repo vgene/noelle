@@ -51,7 +51,8 @@ bool Parallelizer::parallelizeLoop (LoopDependenceInfo *LDI, Parallelization &pa
   auto codeModified = false;
   ParallelizationTechnique *usedTechnique = nullptr;
   if (  true
-        && this->techniques.doall
+        && (this->enabledTechniques.find(DOALL_ID) != this->enabledTechniques.end())
+        && LDI->isTechniqueEnabled(DOALL_ID)
         && doall.canBeAppliedToLoop(LDI, par, h)
     ){
 
@@ -63,7 +64,8 @@ bool Parallelizer::parallelizeLoop (LoopDependenceInfo *LDI, Parallelization &pa
     usedTechnique = &doall;
 
   } else if ( true
-              && this->techniques.helix
+              && (this->enabledTechniques.find(HELIX_ID) != this->enabledTechniques.end())
+              && LDI->isTechniqueEnabled(HELIX_ID)
               && helix.canBeAppliedToLoop(LDI, par, h)   
     ){
 
@@ -85,18 +87,17 @@ bool Parallelizer::parallelizeLoop (LoopDependenceInfo *LDI, Parallelization &pa
     usedTechnique = &helix;
 
   } else if ( true
-              && this->techniques.dswp
+              && (this->enabledTechniques.find(DSWP_ID) != this->enabledTechniques.end())
+              && LDI->isTechniqueEnabled(DSWP_ID)
+              && dswp.canBeAppliedToLoop(LDI, par, h)
     ) {
-    dswp.reset();
-    dswp.initialize(LDI, h);
-    if (dswp.canBeAppliedToLoop(LDI, par, h)) {
 
-      /*
-       * Apply DSWP.
-       */
-      codeModified = dswp.apply(LDI, par, h);
-      usedTechnique = &dswp;
-    }
+    /*
+     * Apply DSWP.
+     */
+    dswp.reset();
+    codeModified = dswp.apply(LDI, par, h);
+    usedTechnique = &dswp;
   }
 
   /*

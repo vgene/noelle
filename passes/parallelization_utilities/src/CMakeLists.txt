@@ -1,12 +1,12 @@
 # Sources
 set(Srcs 
+  LoopSummary.cpp
   EnvBuilder.cpp
   LoopEnvironment.cpp
   SCCDAGAttrs.cpp
   LoopDependenceInfo.cpp
   SCCDAGPartition.cpp
   Parallelization.cpp
-  Techniques.cpp
 )
 
 # Compilation flags
