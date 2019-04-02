@@ -18,6 +18,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "LoopEnvironment.hpp"
 #include "EnvBuilder.hpp"
+#include "Techniques.hpp"
 
 using namespace std;
 
@@ -92,14 +93,24 @@ namespace llvm {
 
     LoopDependenceInfo(PDG *lG, Loop *l, LoopInfo &li, PostDominatorTree &pdt);
 
+    void copyParallelizationOptionsFrom(LoopDependenceInfo *otherLDI);
+
+    uint32_t numberOfExits(void) const;
+
+    std::function<LoopDependenceInfo *(Function *F, int loopIndex)>
+        *reevaluator;
+
+    bool isTechniqueEnabled(Technique technique);
+
+    void enableAllTechniques(void);
+
+    void disableTechnique(Technique techniqueToDisable);
+
     ~LoopDependenceInfo();
 
-    void copyParallelizationOptionsFrom (LoopDependenceInfo *otherLDI) ;
-    uint32_t numberOfExits (void) const;
+  private:
+    std::set<Technique> enabledTechniques;
 
-    std::function<LoopDependenceInfo *(Function *F, int loopIndex)> *reevaluator;
-
-   private:
     void fetchLoopAndBBInfo (LoopInfo &li, Loop *l) ;
     void createDGsForLoop (Loop *l) ;
 
