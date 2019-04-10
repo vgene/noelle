@@ -21,6 +21,9 @@
 #include <set>
 #include <unordered_map>
 
+//#include "liberty/Utilities/BitMatrix.h"
+#include "BitMatrix.h"
+
 #include "DGBase.hpp"
 #include "SCC.hpp"
 #include "PDG.hpp"
@@ -35,7 +38,7 @@ namespace llvm {
    */
   class SCCDAG : public DG<SCC> {
     public:
-      typedef std::set<SCC *> SCCSet;
+      typedef std::vector<SCC *> SCCSet;
 
       static SCCDAG * createSCCDAGFrom (PDG *);
 
@@ -48,11 +51,32 @@ namespace llvm {
       SCC *sccOfValue (Value *val) const;
       ~SCCDAG() ;
 
+      void computeReachabilityAmongSCCs();
+
+      bool orderedBefore(const SCC *earlySCC, const SCCSet &lates) const;
+      bool orderedBefore(const SCCSet &earlies, const SCC *lateSCC) const;
+      bool orderedBefore(const SCC *earlySCC, const SCC *lateSCC) const;
+
+      unsigned getSCCIndex(const SCC *scc) const {
+        auto sccF = sccIndexes.find(scc);
+        return sccF->second;
+      };
 
     protected:
       void markValuesInSCC();
       void markEdgesAndSubEdges();
 
       unordered_map<Value *, DGNode<SCC> *> valueToSCCNode;
+
+    private:
+      BitMatrix ordered;
+      bool ordered_dirty;
+      std::unordered_map<const SCC*, unsigned> sccIndexes;
+
+      typedef std::unordered_map<DGNode<Value> *, int> DGNode2Index;
+
+      static void visit(DGNode<Value> *pdgNode, PDG *pdg, unsigned &index,
+                        DGNode2Index &idx, DGNode2Index &low,
+                        std::vector<DGNode<Value> *> &stack, SCCDAG *sccdag);
   };
 }

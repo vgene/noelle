@@ -93,6 +93,7 @@ namespace llvm {
       DGNode<T> *addNode(T *theT, bool inclusion);
       DGNode<T> *fetchOrAddNode(T *theT, bool inclusion);
       DGNode<T> *fetchNode(T *theT);
+      const DGNode<T> *fetchConstNode(T *theT) const;
 
       DGEdge<T> *addEdge(T *from, T *to);
       DGEdge<T> *copyAddEdge(DGEdge<T> &edgeToCopy);
@@ -129,12 +130,15 @@ namespace llvm {
 
       typedef typename std::vector<DGNode<T> *>::iterator nodes_iterator;
       typedef typename std::set<DGEdge<T> *>::iterator edges_iterator;
+      typedef typename std::set<DGEdge<T> *>::const_iterator edges_const_iterator;
 
       edges_iterator begin_edges() { return allConnectedEdges.begin(); }
       edges_iterator end_edges() { return allConnectedEdges.end(); }
 
       edges_iterator begin_outgoing_edges() { return outgoingEdges.begin(); }
       edges_iterator end_outgoing_edges() { return outgoingEdges.end(); }
+      edges_const_iterator begin_outgoing_edges() const { return outgoingEdges.begin(); }
+      edges_const_iterator end_outgoing_edges() const { return outgoingEdges.end(); }
       edges_iterator begin_incoming_edges() { return incomingEdges.begin(); }
       edges_iterator end_incoming_edges() { return incomingEdges.end(); }
 
@@ -200,9 +204,12 @@ namespace llvm {
      DGEdgeBase(const DGEdgeBase<T, SubT> &oldEdge);
 
      typedef typename std::set<DGEdge<SubT> *>::iterator edges_iterator;
+      typedef typename std::set<DGEdge<SubT> *>::const_iterator edges_const_iterator;
 
      edges_iterator begin_sub_edges() { return subEdges.begin(); }
      edges_iterator end_sub_edges() { return subEdges.end(); }
+     edges_const_iterator begin_sub_edges() const { return subEdges.begin(); }
+     edges_const_iterator end_sub_edges() const { return subEdges.end(); }
 
      inline iterator_range<edges_iterator> getSubEdges() {
        return make_range(subEdges.begin(), subEdges.end()); }
@@ -229,9 +236,15 @@ namespace llvm {
     void setLoopCarried(bool lc) { isLoopCarried = lc; }
     void setRemovable(bool rem) { isRemovable = rem; }
 
-    void addSubEdge(DGEdge<SubT> *edge) { subEdges.insert(edge); }
+    void addSubEdge(DGEdge<SubT> *edge) {
+      subEdges.insert(edge);
+      isLoopCarried |= edge->isLoopCarriedDependence();
+    }
     void removeSubEdge(DGEdge<SubT> *edge) { subEdges.erase(edge); }
-    void clearSubEdges() { subEdges.clear(); }
+    void clearSubEdges() {
+      subEdges.clear();
+      setLoopCarried(false);
+    }
 
     std::string toString();
     raw_ostream &print(raw_ostream &stream, std::string linePrefix = "");
@@ -269,6 +282,13 @@ namespace llvm {
   {
     auto nodeI = internalNodeMap.find(theT);
     return (nodeI != internalNodeMap.end()) ? nodeI->second : externalNodeMap[theT];
+  }
+
+  template <class T> const DGNode<T> *DG<T>::fetchConstNode(T *theT) const {
+    auto nodeI = internalNodeMap.find(theT);
+    return (nodeI != internalNodeMap.end())
+               ? nodeI->second
+               : externalNodeMap.find(theT)->second;
   }
 
   template <class T>

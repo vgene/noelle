@@ -56,8 +56,14 @@ namespace llvm {
       //const std::string varColor = "color=black";
       const std::string iiColor = "color=blue";
       const std::string lcColor = "color=red";
+      const std::string iiRColor = "color=green";
+      const std::string lcRColor = "color=black";
       //return edge->isControlDependence() ? cntColor : (edge->isMemoryDependence() ? memColor : varColor);
-      return edge->isLoopCarriedDependence() ? lcColor : iiColor;
+
+      if (edge->isRemovableDependence())
+        return edge->isLoopCarriedDependence() ? lcRColor : iiRColor;
+      else
+        return edge->isLoopCarriedDependence() ? lcColor : iiColor;
     }
   };
 

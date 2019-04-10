@@ -5,6 +5,7 @@ set(Srcs
   PDG.cpp
   SCCDAG.cpp
   SCC.cpp
+  BitMatrix.cpp
 )
 
 # Compilation flags

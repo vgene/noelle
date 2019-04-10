@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "llvm/Pass.h"
@@ -21,7 +21,7 @@
 #include "../include/DGGraphTraits.hpp"
 #include "../include/SCCDAG.hpp"
 
-llvm::SCCDAG::SCCDAG() {}
+llvm::SCCDAG::SCCDAG() { ordered_dirty = true; }
 
 llvm::SCCDAG::~SCCDAG() {
   for (auto *edge : allEdges)
@@ -30,7 +30,9 @@ llvm::SCCDAG::~SCCDAG() {
     if (node) delete node;
 }
 
-
+#if 0
+// sot: seems to create a subset of the correct SCCDAG. Problem occured in 3mm, 179.art, 056.ear, ...
+// replace with Tarjan's SCC algorithm
 SCCDAG *llvm::SCCDAG::createSCCDAGFrom(PDG *pdg)
 {
   auto sccDAG = new SCCDAG();
@@ -80,6 +82,71 @@ SCCDAG *llvm::SCCDAG::createSCCDAGFrom(PDG *pdg)
 
   sccDAG->markValuesInSCC();
   sccDAG->markEdgesAndSubEdges();
+  sccDAG->computeReachabilityAmongSCCs();
+  return sccDAG;
+}
+#endif
+
+void llvm::SCCDAG::visit(DGNode<Value> *pdgNode, PDG *pdg, unsigned &index,
+                         DGNode2Index &idx, DGNode2Index &low,
+                         std::vector<DGNode<Value> *> &stack, SCCDAG *sccDAG) {
+
+  idx[pdgNode] = index;
+  low[pdgNode] = index;
+  ++index;
+
+  stack.push_back(pdgNode);
+
+  // Foreach successor 'succ' of 'pdgNode'
+  for (auto outgoingEdge : pdgNode->getOutgoingEdges()) {
+    auto succ = outgoingEdge->getIncomingNode();
+
+    // Is this the first path to reach 'succ' ?
+    if (-1 == idx[succ]) {
+      visit(succ, pdg, index, idx, low, stack, sccDAG);
+      low[pdgNode] = std::min(low[pdgNode], low[succ]);
+    }
+
+    // Not the first path.  Is 'succ' on this path?
+    else if (std::find(stack.begin(), stack.end(), succ) != stack.end()) {
+      low[pdgNode] = std::min(low[pdgNode], idx[succ]);
+    }
+  }
+
+  // Is pdgNode the root of an SCC?
+  if (idx[pdgNode] == low[pdgNode]) {
+    // Copy this SCC into the result,
+    std::set<DGNode<Value> *> nodes;
+    for (;;) {
+      DGNode<Value> *n = stack.back();
+      stack.pop_back();
+      nodes.insert(n);
+
+      if (n == pdgNode)
+        break;
+    }
+    auto scc = new SCC(nodes);
+    sccDAG->addNode(scc, /*inclusion=*/ true);
+  }
+}
+
+SCCDAG *llvm::SCCDAG::createSCCDAGFrom(PDG *pdg)
+{
+  auto sccDAG = new SCCDAG();
+  unsigned index = 0;
+  std::vector<DGNode<Value> *> stack;
+  DGNode2Index idx, low;
+  for (DGNode<Value> *pdgNode : pdg->getNodes()) {
+    idx[pdgNode] = -1;
+    low[pdgNode] = 0;
+  }
+  for (DGNode<Value> *pdgNode : pdg->getNodes()) {
+    if (-1 == idx[pdgNode])
+      visit(pdgNode, pdg, index, idx, low, stack, sccDAG);
+  }
+  sccDAG->markValuesInSCC();
+  sccDAG->markEdgesAndSubEdges();
+  sccDAG->computeReachabilityAmongSCCs();
   return sccDAG;
 }
 
@@ -137,7 +204,7 @@ void llvm::SCCDAG::markEdgesAndSubEdges()
 void llvm::SCCDAG::mergeSCCs(std::set<DGNode<SCC> *> &sccSet)
 {
   if (sccSet.size() < 2) return;
-  
+
   std::set<DGNode<Value> *> mergeNodes;
   for (auto sccNode : sccSet)
   {
@@ -161,4 +228,50 @@ void llvm::SCCDAG::mergeSCCs(std::set<DGNode<SCC> *> &sccSet)
 
 SCC *llvm::SCCDAG::sccOfValue (Value *val) const {
   return valueToSCCNode.find(val)->second->getT();
+}
+
+bool llvm::SCCDAG::orderedBefore(const SCC *earlySCC,
+                                 const SCCSet &lates) const {
+  for (auto lscc : lates)
+    if (orderedBefore(earlySCC, lscc))
+      return true;
+  return false;
+}
+
+bool llvm::SCCDAG::orderedBefore(const SCCSet &earlies,
+                                 const SCC *lateSCC) const {
+  for (auto escc : earlies)
+    if (orderedBefore(escc, lateSCC))
+      return true;
+  return false;
+}
+
+bool llvm::SCCDAG::orderedBefore(const SCC *earlySCC,
+                                 const SCC *lateSCC) const {
+  assert(!ordered_dirty && "Must run computeReachabilityAmongSCCs() first");
+  auto earlySCCid = sccIndexes.find(earlySCC)->second;
+  auto lateSCCid = sccIndexes.find(lateSCC)->second;
+  return ordered.test(earlySCCid, lateSCCid);
+}
+
+void llvm::SCCDAG::computeReachabilityAmongSCCs()
+{
+  ordered_dirty = false;
+  const unsigned N_scc = this->numNodes();
+
+  unsigned index = 0;
+  for (const auto *SCCNode : this->getNodes()) {
+    sccIndexes[SCCNode->getT()] = index;
+    index++;
+  }
+
+  ordered.resize( N_scc );
+
+  for (auto *SCCEdge : this->getEdges()) {
+    const SCC *srcSCC = SCCEdge->getOutgoingT();
+    const SCC *dstSCC = SCCEdge->getIncomingT();
+    ordered.set(sccIndexes[srcSCC], sccIndexes[dstSCC]);
+  }
+
+  ordered.transitive_closure();
 }
