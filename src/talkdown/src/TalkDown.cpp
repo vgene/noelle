@@ -22,17 +22,56 @@
  */
 
 #include "TalkDown.hpp"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/ADT/SmallVector.h"
 
 bool llvm::TalkDown::doInitialization (Module &M) {
   return false;
 }
 
 bool llvm::TalkDown::runOnModule (Module &M) {
-  return false;
+  /* 1. Split BasicBlocks wherever the applicable annotation changes
+   * 2. Construct SESE tree at BasicBlock granularity; write query APIs
+   */
+
+  using SplitPoint = std::pair<BasicBlock *, Instruction *>;
+  llvm::SmallVector<SplitPoint, 8> splits;
+
+  // Collect all the split points in each function
+  for (auto & function : M) {
+    MDNode * last_note_meta = nullptr;
+    for (auto & block : function) {
+      for (auto & instruction : block) {
+        /* NOTE(jordan): When there's a new annotation (or none, when
+         * there was one), we need to split the block.
+         */
+        if (true
+          && instruction.hasMetadata()
+          && (instruction.getMetadata("note.noelle") != last_note_meta)
+        ) {
+          splits.emplace_back(&block, &instruction);
+          last_note_meta = instruction.getMetadata("note.noelle");
+        }
+      }
+    }
+  }
+
+  // Perform splitting
+  for (SplitPoint & split : splits) {
+    auto * block_ptr = split.first;
+    auto * instruction_ptr = split.second;
+    // NOTE(jordan): using SplitBlock is recommended in the docs
+    llvm::SplitBlock(block_ptr, instruction_ptr);
+  }
+
+  // Construct SESE tree
+  // TODO
+
+  return true; // blocks are split; source is modified
 }
 
 void llvm::TalkDown::getAnalysisUsage (AnalysisUsage &AU) const {
-  AU.setPreservesAll();
+  /* AU.setPreservesAll(); */
   return ;
 }
 
