@@ -21,20 +21,18 @@
 #include "../include/DGGraphTraits.hpp"
 #include "../include/SCCDAG.hpp"
 
-llvm::SCCDAG::SCCDAG() { ordered_dirty = true; }
+using namespace llvm ;
 
-llvm::SCCDAG::~SCCDAG() {
-  for (auto *edge : allEdges)
-    if (edge) delete edge;
-  for (auto *node : allNodes)
-    if (node) delete node;
-}
+SCCDAG::SCCDAG() { ordered_dirty = true; }
 
 #if 0
 // sot: seems to create a subset of the correct SCCDAG. Problem occured in 3mm, 179.art, 056.ear, ...
 // replace with Tarjan's SCC algorithm
-SCCDAG *llvm::SCCDAG::createSCCDAGFrom(PDG *pdg)
-{
+SCCDAG * SCCDAG::createSCCDAGFrom (PDG *pdg) {
+
+  /*
+   * Create an empty SCCDAG.
+   */
   auto sccDAG = new SCCDAG();
 
   /*
@@ -130,8 +128,7 @@ void llvm::SCCDAG::visit(DGNode<Value> *pdgNode, PDG *pdg, unsigned &index,
   }
 }
 
-SCCDAG *llvm::SCCDAG::createSCCDAGFrom(PDG *pdg)
-{
+SCCDAG *SCCDAG::createSCCDAGFrom(PDG *pdg) {
   auto sccDAG = new SCCDAG();
   unsigned index = 0;
   std::vector<DGNode<Value> *> stack;
@@ -150,8 +147,18 @@ SCCDAG *llvm::SCCDAG::createSCCDAGFrom(PDG *pdg)
   return sccDAG;
 }
 
-void llvm::SCCDAG::markValuesInSCC()
-{
+bool SCCDAG::doesItContain (Instruction *inst) const {
+
+  /*
+   * Fetch the SCC that contains the instruction given as input.
+   */
+  auto SCC = this->sccOfValue(inst);
+
+  return SCC != nullptr;
+}
+
+void SCCDAG::markValuesInSCC() {
+
   /*
    * Maintain association of each internal node to its SCC
    */
@@ -165,7 +172,7 @@ void llvm::SCCDAG::markValuesInSCC()
   }
 }
 
-void llvm::SCCDAG::markEdgesAndSubEdges()
+void SCCDAG::markEdgesAndSubEdges()
 {
   /*
    * Add edges between SCCs by looking at each SCC's outgoing edges
@@ -201,7 +208,7 @@ void llvm::SCCDAG::markEdgesAndSubEdges()
   }
 }
 
-void llvm::SCCDAG::mergeSCCs(std::set<DGNode<SCC> *> &sccSet)
+void SCCDAG::mergeSCCs(std::set<DGNode<SCC> *> &sccSet)
 {
   if (sccSet.size() < 2) return;
 
@@ -226,36 +233,32 @@ void llvm::SCCDAG::mergeSCCs(std::set<DGNode<SCC> *> &sccSet)
   this->markEdgesAndSubEdges();
 }
 
-SCC *llvm::SCCDAG::sccOfValue (Value *val) const {
+SCC * SCCDAG::sccOfValue (Value *val) const {
   return valueToSCCNode.find(val)->second->getT();
 }
 
-bool llvm::SCCDAG::orderedBefore(const SCC *earlySCC,
-                                 const SCCSet &lates) const {
+bool SCCDAG::orderedBefore(const SCC *earlySCC, const SCCSet &lates) const {
   for (auto lscc : lates)
     if (orderedBefore(earlySCC, lscc))
       return true;
   return false;
 }
 
-bool llvm::SCCDAG::orderedBefore(const SCCSet &earlies,
-                                 const SCC *lateSCC) const {
+bool SCCDAG::orderedBefore(const SCCSet &earlies, const SCC *lateSCC) const {
   for (auto escc : earlies)
     if (orderedBefore(escc, lateSCC))
       return true;
   return false;
 }
 
-bool llvm::SCCDAG::orderedBefore(const SCC *earlySCC,
-                                 const SCC *lateSCC) const {
+bool SCCDAG::orderedBefore(const SCC *earlySCC, const SCC *lateSCC) const {
   assert(!ordered_dirty && "Must run computeReachabilityAmongSCCs() first");
   auto earlySCCid = sccIndexes.find(earlySCC)->second;
   auto lateSCCid = sccIndexes.find(lateSCC)->second;
   return ordered.test(earlySCCid, lateSCCid);
 }
 
-void llvm::SCCDAG::computeReachabilityAmongSCCs()
-{
+void SCCDAG::computeReachabilityAmongSCCs() {
   ordered_dirty = false;
   const unsigned N_scc = this->numNodes();
 
@@ -274,4 +277,53 @@ void llvm::SCCDAG::computeReachabilityAmongSCCs()
   }
 
   ordered.transitive_closure();
+}
+
+int64_t SCCDAG::numberOfInstructions (void) {
+
+  /*
+   * Iterate over SCCs.
+   */
+  int64_t n = 0;
+  for (auto sccNode : this->getNodes()){
+    auto SCC = sccNode->getT();
+    n += SCC->numberOfInstructions();
+  }
+
+  return n;
+}
+
+bool SCCDAG::iterateOverInstructions (std::function<bool (Instruction *)> funcToInvoke){
+
+  /*
+   * Iterate over SCC.
+   */
+  for (auto sccNode : this->getNodes()){
+
+    /*
+     * Iterate over instructions contained in the SCC.
+     */
+    auto SCC = sccNode->getT();
+    if (SCC->iterateOverInstructions(funcToInvoke)){
+      return true;
+    }
+  }
+
+  return false ;
+}
+
+SCCDAG::~SCCDAG() {
+  for (auto *edge : allEdges){
+    if (edge) {
+      delete edge;
+    }
+  }
+
+  for (auto *node : allNodes){
+    if (node) {
+      delete node;
+    }
+  }
+
+  return ;
 }
