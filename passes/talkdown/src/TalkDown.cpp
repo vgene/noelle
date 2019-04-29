@@ -24,6 +24,7 @@
 #include "TalkDown.hpp"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/CFG.h"
 
 bool llvm::TalkDown::doInitialization (Module &M) {
   return false;
@@ -40,52 +41,31 @@ bool llvm::TalkDown::doInitialization (Module &M) {
  * the exception perhaps of using git submodules) how that codebase could
  * reasonably be copied into this one for easy reference.
  */
-using Annotation = std::map<std::string, int64_t>;
-
-Annotation parse_metadata (MDNode * md) {
-  // NOTE(jordan): MDNode is a tuple of MDString, ConstantInt pairs
-  // NOTE(jordan): Use mdconst::dyn_extract API from Metadata.h#483
-  Annotation result = {};
-  for (auto const & pair_operand : md->operands()) {
-    using namespace llvm;
-    auto * pair = dyn_cast<MDNode>(pair_operand.get());
-    auto * key = dyn_cast<MDString>(pair->getOperand(0));
-    auto * val = mdconst::dyn_extract<ConstantInt>(pair->getOperand(1));
-    result.emplace(key->getString(), val->getSExtValue());
+namespace Note {
+  TalkDown::Annotation parse_metadata (MDNode * md) {
+    // NOTE(jordan): MDNode is a tuple of MDString, ConstantInt pairs
+    // NOTE(jordan): Use mdconst::dyn_extract API from Metadata.h#483
+    TalkDown::Annotation result = {};
+    for (auto const & pair_operand : md->operands()) {
+      using namespace llvm;
+      auto * pair = dyn_cast<MDNode>(pair_operand.get());
+      auto * key = dyn_cast<MDString>(pair->getOperand(0));
+      auto * val = mdconst::dyn_extract<ConstantInt>(pair->getOperand(1));
+      result.emplace(key->getString(), val->getSExtValue());
+    }
+    return result;
   }
-  return result;
-}
 
-void print_annotation (Annotation value, llvm::raw_ostream & os) {
-  os << "Annotation {\n";
-  for (auto annotation_entry : value) {
-    os
-      << "  "  << annotation_entry.first
-      << " = " << annotation_entry.second
-      << "\n";
+  void print_annotation (TalkDown::Annotation value, llvm::raw_ostream & os) {
+    os << "Annotation {\n";
+    for (auto annotation_entry : value) {
+      os
+        << "  "  << annotation_entry.first
+        << " = " << annotation_entry.second
+        << "\n";
+    }
+    os << "};\n";
   }
-  os << "};\n";
-}
-
-namespace SESE {
-  /* NOTE(jordan): requirements:
-   *
-   * 1. Given an instruction, obtain the correct Noelle metadata
-   * 2. Figure out the range of an annotation (?) (coalescing)
-   *
-   * The original idea was - what? To be able to, for a particular
-   * instruction, figure out the applicable annotation(s) -- this is
-   * already done. We flatten the nested annotation structure earlier in
-   * the process. So we can just look up the annotation, at this point. We
-   * need to deserialize it from the instruction and store it for later.
-   *
-   * TODO(jordan): discuss with Simone the API we still need, if the SESE
-   * tree isn't used anymore to apply scoping rules... Do we need more
-   * than to be able to say, for a particulary Basic Block, "this is the
-   * applicable Note-Noelle annotation"? (e.g. ordered, independent, etc.)
-   *
-   */
-  std::map<Instruction *, Annotation> InstructionAnnotations;
 }
 
 bool llvm::TalkDown::runOnModule (Module &M) {
@@ -113,7 +93,9 @@ bool llvm::TalkDown::runOnModule (Module &M) {
           splits.emplace_back(&instruction);
           last_note_meta = instruction.getMetadata("note.noelle");
           llvm::errs() << instruction << " has Noelle annotation:\n";
-          print_annotation(parse_metadata(last_note_meta), llvm::errs());
+          Annotation note = Note::parse_metadata(last_note_meta);
+          Note::print_annotation(note, llvm::errs());
+          this->annotations.insert({ &instruction, note });
         }
       }
     }
@@ -129,13 +111,15 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       << "\n\tinstruction @ " << split
       << "\n";
 
-    BasicBlock::iterator I (split);
-    Instruction * previous = &*--I;
-    if (previous->hasMetadata()) {
-      MDNode * noelle_meta = previous->getMetadata("note.noelle");
-      llvm::errs() << previous << " has Noelle annotation:\n";
-      print_annotation(parse_metadata(noelle_meta), llvm::errs());
-    }
+    // NOTE(jordan): DEBUG
+    /* BasicBlock::iterator I (split); */
+    /* Instruction * previous = &*--I; */
+    /* if (previous->hasMetadata()) { */
+    /*   MDNode * noelle_meta = previous->getMetadata("note.noelle"); */
+    /*   llvm::errs() << previous << " has Noelle annotation:\n"; */
+    /*   Annotation note = Note::parse_metadata(noelle_meta); */
+    /*   Note::print_annotation(note, llvm::errs()); */
+    /* } */
 
     // NOTE(jordan): using SplitBlock is recommended in the docs
     llvm::SplitBlock(split->getParent(), split);
@@ -143,7 +127,37 @@ bool llvm::TalkDown::runOnModule (Module &M) {
 
   llvm::errs() << "Splits made.\n";
   // Construct SESE tree
-  // TODO
+  for (auto const & function : M) {
+    std::vector<BasicBlock const *> region_starts;
+    std::vector<SESE::Region> regions;
+    llvm::errs() << "Find regions.\n";
+    for (auto const & block : function) {
+      int predecessor_count = 0, successor_count = 0;
+      auto predecessors = llvm::predecessors(&block);
+      auto successors   = llvm::successors(&block);
+      for (auto pred : predecessors) { predecessor_count++; }
+      for (auto succ : predecessors) { successor_count++; }
+      if (predecessor_count == 1 && successor_count > 1) {
+        // NOTE(jordan): This delineates the start of a region
+        llvm::errs() << "Found region start.\n";
+        region_starts.push_back(&block);
+      } else if (predecessor_count == 1 && successor_count == 1) {
+        // NOTE(jordan): This block is internal to a region
+        llvm::errs() << "Found inner region.\n";
+        regions.push_back({ &block, &block });
+      } else if (predecessor_count > 1 && successor_count == 1) {
+        // NOTE(jordan): This delineates the end of a region
+        // FIXME(jordan): fuck this.
+        llvm::errs() << "Found region end.\n";
+        BasicBlock * start = const_cast<BasicBlock *>(&block);
+        while (std::find(region_starts.begin(), region_starts.end(), start) == region_starts.end()) {
+          start = const_cast<BasicBlock *>(&**llvm::pred_begin(start));
+        }
+        llvm::errs() << "start for region: " << *start << "\n";
+        llvm::errs() << "end   for region: " << block  << "\n";
+      }
+    }
+  }
 
   return true; // blocks are split; source is modified
 }
