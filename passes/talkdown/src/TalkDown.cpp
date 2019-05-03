@@ -26,8 +26,113 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/CFG.h"
 
-bool llvm::TalkDown::doInitialization (Module &M) {
-  return false;
+namespace SpanningTree {
+  struct Node {
+    Node (BasicBlock const * block) : block(block) {}
+    BasicBlock const * block;
+    // NOTE(jordan): spanning (forward) edges
+    std::vector<SpanningTree::Node *> children;
+    // NOTE(jordan): unused (backward) edges
+    std::vector<BasicBlock const *> bb_back_edges;
+    std::vector<SpanningTree::Node *> back_edges;
+  };
+
+  void print (
+    SpanningTree::Node * start,
+    llvm::raw_ostream & os
+  ) {
+    os
+      << "Node (" << start << "; BB " << start->block << ")"
+      << "\n\tchildren: ";
+    for (auto & child : start->children) {
+      os << child << " ";
+    }
+    os << "\n\tback-edges: ";
+    for (auto & back_edge : start->back_edges) {
+      os << back_edge << " ";
+    }
+    os << "\n";
+    for (auto & child : start->children) {
+      SpanningTree::print(child, os);
+    }
+  }
+
+  SpanningTree::Node * compute (
+    llvm::BasicBlock const * start,
+    std::vector<SpanningTree::Node *> & tree_vector
+  );
+
+  SpanningTree::Node * compute_recursive (
+    llvm::BasicBlock const * start,
+    std::vector<BasicBlock const *> & visited,
+    std::vector<SpanningTree::Node *> & tree_vector
+  );
+
+  void compute_back_edges (
+    std::vector<SpanningTree::Node *> & tree_vector
+  );
+
+  SpanningTree::Node * compute (
+    llvm::BasicBlock const * start,
+    std::vector<SpanningTree::Node *> & tree_vector
+  ) {
+    std::vector<BasicBlock const *> visited = {};
+    SpanningTree::Node * root = SpanningTree::compute_recursive(
+      start,
+      visited,
+      tree_vector
+    );
+    SpanningTree::compute_back_edges(tree_vector);
+    return root;
+  }
+
+  SpanningTree::Node * compute_recursive (
+    llvm::BasicBlock const * start,
+    std::vector<BasicBlock const *> & visited,
+    std::vector<SpanningTree::Node *> & tree_vector
+  ) {
+    // Construct node for this block
+    SpanningTree::Node * node = new SpanningTree::Node(start);
+    tree_vector.push_back(node);
+    // Drain successors iterator into a vector
+    auto succ_it = llvm::successors(start);
+    std::vector<BasicBlock const *> successors;
+    for (auto const & succ : succ_it) { successors.push_back(succ); }
+    // Visit this node (to prevent successors from looping back to it)
+    visited.push_back(start);
+    // Reach not-yet-visited children, add back-edges to visited children
+    for (auto & succ : successors) {
+      auto visited_succ = std::find(visited.begin(), visited.end(), succ);
+      if (visited_succ == visited.end()) {
+        node->children.push_back(
+          SpanningTree::compute_recursive(succ, visited, tree_vector)
+        );
+      } else {
+        node->bb_back_edges.push_back(succ);
+      }
+    }
+    return node;
+  }
+
+  void compute_back_edges (
+    std::vector<SpanningTree::Node *> & tree_vector
+  ) {
+    for (auto & node : tree_vector) {
+      for (auto & bb_back_edge : node->bb_back_edges) {
+        SpanningTree::Node * node_back_edge = nullptr;
+        for (auto & seek_node : tree_vector) {
+          if (seek_node->block == bb_back_edge) {
+            node_back_edge = seek_node;
+          }
+        }
+        assert(
+          node_back_edge != nullptr
+          && "back-edge is not in tree?"
+        );
+        node->back_edges.push_back(node_back_edge);
+      }
+    }
+  }
 }
 
 /* FIXME(jordan): this is copied from the types/utilities in pragma-note.
@@ -66,6 +171,10 @@ namespace Note {
     }
     os << "};\n";
   }
+}
+
+bool llvm::TalkDown::doInitialization (Module &M) {
+  return false;
 }
 
 bool llvm::TalkDown::runOnModule (Module &M) {
@@ -127,36 +236,16 @@ bool llvm::TalkDown::runOnModule (Module &M) {
 
   llvm::errs() << "Splits made.\n";
   // Construct SESE tree
-  for (auto const & function : M) {
-    std::vector<BasicBlock const *> region_starts;
-    std::vector<SESE::Region> regions;
-    llvm::errs() << "Find regions.\n";
-    for (auto const & block : function) {
-      int predecessor_count = 0, successor_count = 0;
-      auto predecessors = llvm::predecessors(&block);
-      auto successors   = llvm::successors(&block);
-      for (auto pred : predecessors) { predecessor_count++; }
-      for (auto succ : predecessors) { successor_count++; }
-      if (predecessor_count == 1 && successor_count > 1) {
-        // NOTE(jordan): This delineates the start of a region
-        llvm::errs() << "Found region start.\n";
-        region_starts.push_back(&block);
-      } else if (predecessor_count == 1 && successor_count == 1) {
-        // NOTE(jordan): This block is internal to a region
-        llvm::errs() << "Found inner region.\n";
-        regions.push_back({ &block, &block });
-      } else if (predecessor_count > 1 && successor_count == 1) {
-        // NOTE(jordan): This delineates the end of a region
-        // FIXME(jordan): fuck this.
-        llvm::errs() << "Found region end.\n";
-        BasicBlock * start = const_cast<BasicBlock *>(&block);
-        while (std::find(region_starts.begin(), region_starts.end(), start) == region_starts.end()) {
-          start = const_cast<BasicBlock *>(&**llvm::pred_begin(start));
-        }
-        llvm::errs() << "start for region: " << *start << "\n";
-        llvm::errs() << "end   for region: " << block  << "\n";
-      }
-    }
+  // 1. Construct minimum spanning tree
+  for (auto & function : M) {
+    BasicBlock * entry_block = &*function.begin();
+    std::vector<SpanningTree::Node *> tree_vector = {};
+    llvm::errs() << "\nFunction " << function.getName() << "\n";
+    SpanningTree::Node * st_root = SpanningTree::compute(
+      entry_block,
+      tree_vector
+    );
+    SpanningTree::print(st_root, llvm::errs());
   }
 
   return true; // blocks are split; source is modified
