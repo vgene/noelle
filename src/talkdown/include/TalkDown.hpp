@@ -26,39 +26,10 @@
 
 using namespace llvm;
 
-namespace SESE {
-  /* NOTE(jordan): requirements:
-   *
-   * 1. Given an instruction, obtain the correct Noelle metadata
-   * 2. Figure out the range of an annotation (?) (coalescing)
-   *
-   * The original idea was - what? To be able to, for a particular
-   * instruction, figure out the applicable annotation(s) -- this is
-   * already done. We flatten the nested annotation structure earlier in
-   * the process. So we can just look up the annotation, at this point. We
-   * need to deserialize it from the instruction and store it for later.
-   *
-   * TODO(jordan): discuss with Simone the API we still need, if the SESE
-   * tree isn't used anymore to apply scoping rules... Do we need more
-   * than to be able to say, for a particulary Basic Block, "this is the
-   * applicable Note-Noelle annotation"? (e.g. ordered, independent, etc.)
-   *
-   */
-  struct Region {
-    BasicBlock const * start;
-    BasicBlock const * end;
-  };
-  struct Node {
-    Region region;
-    std::vector<Region> children;
-  };
-}
-
 namespace llvm {
 
   struct TalkDown : public ModulePass {
     using Annotation  = std::map<std::string, int64_t>;
-    using Annotations = std::map<Instruction *, Annotation>;
     public:
       static char ID;
 
@@ -70,6 +41,5 @@ namespace llvm {
 
     private:
       // TODO(jordan): coalesce BasicBlocks into an SESE tree.
-      Annotations annotations;
   };
 }
