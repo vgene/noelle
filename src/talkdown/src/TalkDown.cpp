@@ -219,7 +219,13 @@ bool llvm::TalkDown::runOnModule (Module &M) {
           && instruction.hasMetadata()
           && (instruction.getMetadata("note.noelle") != last_note_meta)
         ) {
-          splits.emplace_back(&instruction);
+          if (true                                        // Split if...
+            && (&instruction != &*block.begin())          // not the first
+            && (&instruction != &*std::prev(block.end())) // or last.
+          ) {
+            splits.emplace_back(&instruction);
+          }
+          // NOTE(jordan): always save the annotation, even if no split
           last_note_meta = instruction.getMetadata("note.noelle");
           llvm::errs() << instruction << " has Noelle annotation:\n";
           Annotation note = Note::parse_metadata(last_note_meta);
