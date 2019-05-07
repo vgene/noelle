@@ -36,7 +36,8 @@ namespace SpanningTree {
     std::vector<BasicBlock const *> bb_back_edges;
   };
   struct Tree {
-    std::string name;
+    // Is the tree non-empty?
+    bool empty = true;
     // A back-edge is undirected
     using BackEdge = std::pair<Node *, Node *>;
     // NOTE(jordan): top of tree
@@ -67,7 +68,11 @@ namespace SpanningTree {
   );
 
   void print (Tree const & tree, llvm::raw_ostream & os) {
-    os << "Spanning Tree for " << tree.name << "\n";
+    if (tree.empty) {
+      os << "Spanning Tree is empty.\n";
+      return;
+    }
+    os << "Nodes:\n";
     print_recursive(*tree.root, os);
     os << "Back edges:";
     if (tree.back_edges.size() == 0) os << "\n\t(none)";
@@ -76,7 +81,6 @@ namespace SpanningTree {
         << "\n\tNode (" << back_edge.first << ")"
         << " ↔ Node (" << back_edge.second << ")";
     }
-    os << "\n";
   }
 
   void print_recursive (
@@ -85,6 +89,8 @@ namespace SpanningTree {
   ) {
     os
       << "Node (" << &start << "; BB " << start.block << ")"
+      << "\n\tfirst instruction:"
+      << "\n\t" << *start.block->begin()
       << "\n\tchildren:";
     if (start.children.size() == 0) os << "\n\t(none)";
     for (auto const & child : start.children) {
@@ -97,7 +103,10 @@ namespace SpanningTree {
   }
 
   SpanningTree::Tree compute (llvm::Function const & function) {
-    Tree tree = { function.getName() };
+    Tree tree = {};
+    if (function.begin() == function.end()) {
+      return std::move(tree);
+    }
     std::vector<BasicBlock const *> visited = {};
     tree.root = SpanningTree::compute_recursive(
       *function.begin(),
@@ -105,6 +114,7 @@ namespace SpanningTree {
       tree.nodes
     );
     SpanningTree::compute_back_edges(tree);
+    tree.empty = false;
     return std::move(tree);
   }
 
@@ -185,11 +195,11 @@ namespace Note {
     os << "Annotation {\n";
     for (auto annotation_entry : value) {
       os
-        << "  "  << annotation_entry.first
+        << "\t"  << annotation_entry.first
         << " = " << annotation_entry.second
         << "\n";
     }
-    os << "};\n";
+    os << "};";
   }
 }
 
@@ -210,40 +220,54 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   for (auto & function : M) {
     MDNode * last_note_meta = nullptr;
     for (auto & block : function) {
-      for (auto & instruction : block) {
+      for (auto & inst : block) {
         /* NOTE(jordan): When there's a new annotation (or none, when
-         * there was one; or one, where there was none), we need to split
-         * the block.
+         * there was one; or one, where there was none), we should parse
+         * and capture the annotation.
          */
-        if (true
-          && instruction.hasMetadata()
-          && (instruction.getMetadata("note.noelle") != last_note_meta)
+        bool hasMeta = inst.hasMetadata();
+        if (false
+          || (!hasMeta && last_note_meta != nullptr)
+          || (inst.getMetadata("note.noelle") != last_note_meta)
         ) {
-          if (true                                        // Split if...
-            && (&instruction != &*block.begin())          // not the first
-            && (&instruction != &*std::prev(block.end())) // or last.
+          // NOTE(jordan): also split if it changes within a block.
+          if (true                                 // Split if...
+            && (&inst != &*block.begin())          // not the first
+            && (&inst != &*std::prev(block.end())) // or last.
           ) {
-            splits.emplace_back(&instruction);
+            splits.emplace_back(&inst);
           }
+          // NOTE(jordan): DEBUG
+          llvm::errs()
+            << "\nInstruction where annotation changes w/in a block:"
+            << "\n\t" << inst
+            << "\n";
           // NOTE(jordan): always save the annotation, even if no split
-          last_note_meta = instruction.getMetadata("note.noelle");
-          llvm::errs() << instruction << " has Noelle annotation:\n";
-          Annotation note = Note::parse_metadata(last_note_meta);
-          Note::print_annotation(note, llvm::errs());
-          this->annotations.insert({ &instruction, note });
+          if (hasMeta) {
+            last_note_meta = inst.getMetadata("note.noelle");
+            // NOTE(jordan): DEBUG
+            Annotation note = Note::parse_metadata(last_note_meta);
+            Note::print_annotation(note, llvm::errs());
+            llvm::errs() << "\n";
+          } else {
+            // NOTE(jordan): DEBUG
+            llvm::errs() << "Annotation (none ‒ unset)\n";
+            last_note_meta = nullptr;
+          }
         }
       }
     }
   }
 
-  llvm::errs() << "Split points constructed: " << splits.size() << "\n";
+  llvm::errs() << "\nSplit points constructed: " << splits.size() << "\n";
 
   // Perform splitting
   for (SplitPoint & split : splits) {
     llvm::errs()
       << "Split:"
-      << "\n\tblock @ " << split->getParent()
-      << "\n\tinstruction @ " << split
+      << "\n\tin block @ " << split->getParent()
+      << "\n\tbefore instruction @ " << split
+      << "\n\t" << *split
       << "\n";
 
     // NOTE(jordan): DEBUG
@@ -262,12 +286,17 @@ bool llvm::TalkDown::runOnModule (Module &M) {
 
   llvm::errs() << "Splits made.\n";
   // Construct SESE tree
-  // 1. Construct minimum spanning tree
   llvm::errs() << "\n";
   for (auto & function : M) {
     SpanningTree::Tree tree = SpanningTree::compute(function);
-    SpanningTree::print(tree, llvm::errs());
-    llvm::errs() << "\n";
+    llvm::errs() << "Spanning Tree for " << function.getName() << "\n";
+    if (tree.empty) {
+      // NOTE(jordan): DEBUG
+      llvm::errs() << "(empty spanning tree)";
+    } else {
+      SpanningTree::print(tree, llvm::errs());
+    }
+    llvm::errs() << "\n\n";
   }
 
   return true; // blocks are split; source is modified
