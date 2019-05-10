@@ -30,22 +30,17 @@ namespace SpanningTree {
   struct Node {
     Node (BasicBlock const * block) : block(block) {}
     BasicBlock const * block;
-    // NOTE(jordan): spanning  edges
+    int index = -1; // index in spanning-tree (simplifies cycle equiv.)
     std::vector<SpanningTree::Node *> children;
-    // NOTE(jordan): unused edges
-    std::vector<BasicBlock const *> bb_back_edges;
+    std::vector<BasicBlock const *> bb_unused_children;
+    std::vector<Node const *> backedges;
   };
   struct Tree {
-    // Is the tree non-empty?
     bool empty = true;
-    // A back-edge is undirected
-    using BackEdge = std::pair<Node *, Node *>;
-    // NOTE(jordan): top of tree
     Node * root;
-    // NOTE(jordan): nodes ordered by depth
-    std::vector<Node *> nodes;
-    // NOTE(jordan): back-edges (unordered)
-    std::vector<BackEdge> back_edges;
+    std::vector<Node *> nodes; // nodes ordered by depth (root-first)
+    using BackEdge = std::pair<Node *, Node *>; // NOTE: undirected
+    std::vector<BackEdge> backedges; // NOTE: back-edges are unordered
   };
 
   SpanningTree::Tree * compute (
@@ -59,7 +54,7 @@ namespace SpanningTree {
     std::vector<SpanningTree::Node *> & tree_vector
   );
 
-  void compute_back_edges (Tree & tree);
+  void compute_backedges (Tree & tree);
 
   void print (SpanningTree::Tree const & tree, llvm::raw_ostream & os);
   void print_recursive (
@@ -75,11 +70,11 @@ namespace SpanningTree {
     os << "Nodes:\n";
     print_recursive(*tree.root, os);
     os << "Back edges:";
-    if (tree.back_edges.size() == 0) os << "\n\t(none)";
-    for (auto const & back_edge : tree.back_edges) {
+    if (tree.backedges.size() == 0) os << "\n\t(none)";
+    for (auto const & backedge : tree.backedges) {
       os
-        << "\n\tNode (" << back_edge.first << ")"
-        << " ↔ Node (" << back_edge.second << ")";
+        << "\n\tNode (" << backedge.first << ")"
+        << " ↔ Node (" << backedge.second << ")";
     }
   }
 
@@ -113,7 +108,7 @@ namespace SpanningTree {
       visited,
       tree.nodes
     );
-    SpanningTree::compute_back_edges(tree);
+    SpanningTree::compute_backedges(tree);
     tree.empty = false;
     return std::move(tree);
   }
@@ -126,6 +121,7 @@ namespace SpanningTree {
     // Construct node for this block
     SpanningTree::Node * node = new SpanningTree::Node(&start);
     tree_vector.push_back(node);
+    node->index = (tree_vector.size() - 1);
     // Drain successors iterator into a vector
     auto succ_it = llvm::successors(&start);
     std::vector<BasicBlock const *> successors;
@@ -140,18 +136,18 @@ namespace SpanningTree {
           SpanningTree::compute_recursive(*succ, visited, tree_vector)
         );
       } else {
-        node->bb_back_edges.push_back(succ);
+        node->bb_unused_children.push_back(succ);
       }
     }
     return node;
   }
 
-  void compute_back_edges (SpanningTree::Tree & tree) {
+  void compute_backedges (SpanningTree::Tree & tree) {
     for (auto & node : tree.nodes) {
-      for (auto & bb_back_edge : node->bb_back_edges) {
+      for (auto & bb_backedge : node->bb_unused_children) {
         SpanningTree::Node * reached_node = nullptr;
         for (auto & seek_node : tree.nodes) {
-          if (seek_node->block == bb_back_edge) {
+          if (seek_node->block == bb_backedge) {
             reached_node = seek_node;
           }
         }
@@ -159,11 +155,210 @@ namespace SpanningTree {
           reached_node != nullptr
           && "back-edge is not in tree?"
         );
-        tree.back_edges.push_back(std::make_pair(node, reached_node));
+        node->backedges.push_back(reached_node);
+        reached_node->backedges.push_back(node);
+        tree.backedges.push_back(std::make_pair(node, reached_node));
       }
     }
   }
 }
+
+namespace SESE {
+namespace CycleEquivalence {
+  struct BracketList; // NOTE(jordan): forward declarations for Edge.
+  struct Node;
+  struct Edge { // The Program Structure Tree. Section 3.5. p177
+    int cycle_class;  // index of cycle equivalence class
+    int recent_size;  // size of bracket set when this was top edge
+    int recent_class; // equiv. class no. of *tree* edge where this was
+                      //   most recently the topmost bracket
+    std::pair<Node const *, Node const *> ends;
+    bool touches (Node const *);
+  };
+  struct BracketList { // The Program Structure Tree. Section 3.5. p177
+    std::vector<Edge const *> brackets;
+    // create() : BracketList
+    BracketList () {}
+    // size (bl: BracketList) : integer
+    int size () { return brackets.size(); }
+    // push (bl: BracketList, e: bracket): BracketList
+    void push (Edge const & edge) {
+      brackets.push_back(&edge);
+    }
+    // top (bl: BracketList) : bracket
+    Edge const * top () { return brackets.back(); }
+    // delete (bl: BracketList, e: bracket) : BracketList
+    void del (Edge const & edge) {
+      std::remove(std::begin(brackets), std::end(brackets), &edge);
+    }
+    // concat (bl1, bl2: BracketList) : BracketList
+    void concat (BracketList const & other) {
+      brackets.reserve(brackets.size() + other.brackets.size());
+      for (auto other_bracket : other.brackets) {
+        brackets.push_back(other_bracket);
+      }
+    }
+    /*
+    static BracketList create ();
+    static int size (BracketList const & list);
+    static BracketList push (Edge & bracket, BracketList const & list);
+    static Edge const * top (BracketList const & list);
+    static BracketList del (Edge & bracket, BracketList const & list);
+    static BracketList concat (BracketList const &, BracketList const &);
+    */
+  };
+  struct Node { // The Program Structure Tree. Section 3.5. p177
+    int hi;        // dfs_index of dest. nearest to root from a descndnt
+    int dfs_index; // depth-first search index of node
+    BracketList bracket_list;
+    std::vector<int> children;   // referenced by dfs-index
+    std::vector<int> backedges; // referenced by dfs-index
+    SpanningTree::Node const * in_spanning_tree;
+    static bool compare_hi (Node const &, Node const &);
+  };
+  struct Graph {
+    std::vector<Node> nodes;
+    static bool descends_from (Node const &, Node const &);
+  };
+
+  bool Node::compare_hi (Node const & a, Node const & b) {
+    return a.hi < b.hi;
+  }
+
+  bool Edge::touches (Node const * node) {
+    return this->ends.first == node || this->ends.second == node;
+  }
+
+  Graph from_spanning_tree (SpanningTree::Tree const & tree) {
+    // 1. Add all nodes to the graph.
+    std::vector<Node> nodes;
+    for (int dfs_ix = (tree.nodes.size() - 1); dfs_ix >= 0; dfs_ix--) {
+      auto const * tree_node = tree.nodes.at(dfs_ix);
+      // 1.a. compute children indices
+      std::vector<int> children;
+      for (auto const * tree_child : tree_node->children) {
+        children.push_back(tree_child->index);
+      }
+      // 1.b. compute back-edge indices
+      std::vector<int> backedges;
+      for (auto const * tree_backedge : tree_node->backedges) {
+        backedges.push_back(tree_backedge->index);
+      }
+      // 1.c. push node onto graph
+      nodes.push_back({
+        /* hi           */ -1,
+        /* dfs_index    */ dfs_ix,
+        /* bracket_list */ {},
+        /* children     */ std::move(children),
+        /* backedges   */ std::move(backedges),
+        /* in_spanning_tree */ tree_node,
+      });
+    }
+    // 2. Compute pointer graphs for children, back-edges.
+    std::map<Node const *, std::vector<Node const *>> child_graph;
+    std::map<Node const *, std::vector<Node const *>> backedge_graph;
+    for (auto & node : nodes) {
+      std::vector<Node const *> children = {};
+      std::vector<Node const *> backedges = {};
+      for (auto & child_index : node.children) {
+        children.push_back(&nodes.at(child_index));
+      }
+      for (auto & backedge_index : node.backedges) {
+        backedges.push_back(&nodes.at(backedge_index));
+      }
+      child_graph.insert({ &node, std::move(children) });
+      backedge_graph.insert({ &node, std::move(backedges) });
+    }
+    // 3. Calculate cycle equivalence.
+    // The Program Structure Tree. Section 3.5. Figure 4. p178
+    // "for each node in reverse depth-first order"
+    for (auto it = nodes.rbegin(); it != nodes.rend(); it++) {
+      Node & node = *it;
+      // "compute n.hi"
+      // hi0 = min({ t.dfsnum | (n, t) is a back-edge })
+      auto backedge_pointers = backedge_graph.at(&node);
+      auto hi0_node_it = std::min_element(
+        std::begin(backedge_pointers),
+        std::end(backedge_pointers),
+        Node::compare_hi
+      );
+      int hi0 = (*hi0_node_it)->hi;
+      // hi1 = min({ c.hi | c is a child of n })
+      auto child_pointers = child_graph.at(&node);
+      auto hi1_node_it = std::min_element(
+        std::begin(child_pointers),
+        std::end(child_pointers),
+        Node::compare_hi
+      );
+      int hi1 = (*hi1_node_it)->hi;
+      // n.hi = min({ hi0, hi1 })
+      node.hi = std::min(hi0, hi1);
+      // hichild = any child c of n having c.hi = hi1
+      // hi2 = min({ c.hi | c is a child of n other than hichild })
+      auto lo_children = child_pointers;
+      std::remove_if(
+        std::begin(lo_children),
+        std::end(lo_children),
+        [&] (Node const * child) { return child->hi == hi1; }
+      );
+      auto hi2_node_it = std::min_element(
+        std::begin(lo_children),
+        std::end(lo_children),
+        Node::compare_hi
+      );
+      int hi2 = (*hi2_node_it)->hi;
+
+      // "compute bracketlist"
+      std::map<Node const *, std::vector<Node const *>> capping_backedges;
+      // for each child c of n do
+      for (auto child_pointer : child_pointers) {
+        // n.blist = concat(c.blist, n.blist)
+        node.bracket_list = BracketList::concat(
+          node.bracket_list,
+          child_pointer->bracket_list
+        );
+      }
+      // for each capping backedge d from a descendant of n to n do
+      for (auto capping_backedge : capping_backedges.at(&node)) {
+        // delete(n.blist, d)
+        if (Graph::descends_from(node, *capping_backedge)) {
+          BracketList::del(capping_backedge, node.bracket_list);
+        }
+      }
+      // for each backedge b from a descendant of n to n do
+      for (/* ??? */) {
+        // delete(n.blist, b)
+        // if b.class undefined then: b.class = new-class()
+      }
+      // for each backedge e from n to an ancestor of n do
+      for (/* ??? */) {
+        // push(n.blist, e)
+      }
+      // if hi2 < hi0:
+      if (hi2 < hi0) {
+        // "create capping backedge"
+        // d = (n, node[hi1])
+        // push(n.blist, d)
+      }
+
+      // "determine class for edge from parent(n) to n */
+      // if n is not the root of dfs tree:
+      if (node.in_spanning_tree != tree.root) {
+        // let e be the tree edge from parent(n) to n
+        // b = top(n.blist)
+        // if b.recentSize != size(n.blist) then
+          // b.recentSize = size(n.blist)
+          // b.recentClass = new-class()
+        // e.class = b.recentClass
+
+        // "check for e, b equivalences"
+        // if b.recentSize = 1 then
+          // b.class = e.class
+      }
+    }
+  }
+} // namespace: CycleEquivalenceGraph
+} // namespace: SESE
 
 /* FIXME(jordan): this is copied from the types/utilities in pragma-note.
  *
@@ -207,6 +402,7 @@ bool llvm::TalkDown::doInitialization (Module &M) {
   return false;
 }
 
+// TODO(jordan): it looks like this can be refactored as a FunctionPass
 bool llvm::TalkDown::runOnModule (Module &M) {
   /* 1. Split BasicBlocks wherever the applicable annotation changes
    * 2. Construct SESE tree at BasicBlock granularity; write query APIs
@@ -216,7 +412,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   llvm::SmallVector<SplitPoint, 8> splits;
 
   // Collect all the split points in each function
-  // TODO(jordan): it looks like this can be refactored as a FunctionPass
+  // TODO(jordan): refactor this into its own function.
   for (auto & function : M) {
     MDNode * last_note_meta = nullptr;
     for (auto & block : function) {
