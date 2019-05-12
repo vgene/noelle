@@ -13,6 +13,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 #include <unordered_map>
+#include <climits>
 #include <queue>
 #include <set>
 
@@ -141,6 +142,8 @@ namespace llvm {
       edges_const_iterator end_outgoing_edges() const { return outgoingEdges.end(); }
       edges_iterator begin_incoming_edges() { return incomingEdges.begin(); }
       edges_iterator end_incoming_edges() { return incomingEdges.end(); }
+      edges_const_iterator begin_incoming_edges() const { return incomingEdges.begin(); }
+      edges_const_iterator end_incoming_edges() const { return incomingEdges.end(); }
 
       nodes_iterator begin_outgoing_nodes() { return outgoingNodeInstances.begin(); }
       nodes_iterator end_outgoing_nodes() { return outgoingNodeInstances.end(); }
@@ -200,7 +203,7 @@ namespace llvm {
      DGEdgeBase(DGNode<T> *src, DGNode<T> *dst)
          : from(src), to(dst), memory(false), must(false),
            dataDepType(DG_DATA_NONE), isControl(false), isLoopCarried(false),
-           isRemovable(false) {}
+           isRemovable(false), minRemovalCost(LONG_MAX) {}
      DGEdgeBase(const DGEdgeBase<T, SubT> &oldEdge);
 
      typedef typename std::set<DGEdge<SubT> *>::iterator edges_iterator;
@@ -230,11 +233,17 @@ namespace llvm {
     bool isLoopCarriedDependence() const { return isLoopCarried; }
     bool isRemovableDependence() const { return isRemovable; }
     DataDependencyType dataDependenceType() const { return dataDepType; }
+    long getMinRemovalCost () const { return minRemovalCost; }
 
     void setControl(bool ctrl) { isControl = ctrl; }
     void setMemMustType(bool mem, bool must, DataDependencyType dataDepType);
     void setLoopCarried(bool lc) { isLoopCarried = lc; }
     void setRemovable(bool rem) { isRemovable = rem; }
+    void setMinRemovalCost (long cost) { minRemovalCost = cost; }
+    void processNewRemovalCost(long cost) {
+      if (minRemovalCost > cost)
+        minRemovalCost = cost;
+    }
 
     void addSubEdge(DGEdge<SubT> *edge) {
       subEdges.insert(edge);
@@ -255,6 +264,7 @@ namespace llvm {
     std::set<DGEdge<SubT> *> subEdges;
     bool memory, must, isControl, isLoopCarried, isRemovable;
     DataDependencyType dataDepType;
+    long minRemovalCost;
   };
 
   /*
@@ -683,6 +693,7 @@ namespace llvm {
     setControl(oldEdge.isControlDependence());
     setLoopCarried(oldEdge.isLoopCarriedDependence());
     setRemovable(oldEdge.isRemovableDependence());
+    setMinRemovalCost(oldEdge.getMinRemovalCost());
     for (auto subEdge : oldEdge.subEdges) addSubEdge(subEdge);
   }
 
