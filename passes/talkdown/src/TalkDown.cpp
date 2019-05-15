@@ -119,9 +119,12 @@ namespace UndirectedCFG {
 namespace SESE {
 namespace SpanningTree {
   struct Node {
-    Node (BasicBlock const * block) : block(block) {}
+    Node (int dfs_index, BasicBlock const * block, Node const * parent)
+      : dfs_index(dfs_index), block(block), parent(parent)
+      {}
     BasicBlock const * block;
-    int dfs_index = -1; // index in tree (simplifies cycle equiv.)
+    int dfs_index; // index in tree (simplifies cycle equiv.)
+    Node const * parent;
     std::vector<Node const *> children;
     std::vector<Node const *> backedges;
     std::vector<BasicBlock const *> bb_unused_children;
@@ -210,12 +213,16 @@ namespace SpanningTree {
     UndirectedCFG::Graph const & graph,
     UndirectedCFG::Node const & start,
     std::vector<BasicBlock const *> & visited,
-    std::vector<SpanningTree::Node *> & tree_vector
+    std::vector<SpanningTree::Node *> & tree_vector,
+    Node const * parent = nullptr
   ) {
     // Construct node for this block
-    SpanningTree::Node * node = new SpanningTree::Node(start.block);
+    SpanningTree::Node * node = new SpanningTree::Node(
+      tree_vector.size(),
+      start.block,
+      parent
+    );
     tree_vector.push_back(node);
-    node->dfs_index = (tree_vector.size() - 1);
     // Visit this node (to prevent next nodes from looping back to it)
     visited.push_back(node->block);
     // Reach not-yet-visited children, add back-edges for visited children
@@ -225,9 +232,7 @@ namespace SpanningTree {
         continue;
       }
       auto next_result = edge.other_end(&start);
-      if (!next_result.first) {
-        continue;
-      }
+      assert(next_result.first && "Edge touches but has no other end?");
       auto next = next_result.second;
       auto visited_next = std::find(
         visited.begin(),
@@ -238,7 +243,13 @@ namespace SpanningTree {
         node->bb_unused_children.push_back(next->block);
       } else {
         node->children.push_back(
-          SpanningTree::compute_recursive(graph, *next, visited, tree_vector)
+          SpanningTree::compute_recursive(
+            graph,
+            *next,
+            visited,
+            tree_vector,
+            node
+          )
         );
       }
     }
@@ -258,9 +269,38 @@ namespace SpanningTree {
           reached_node != nullptr
           && "back-edge is not in tree?"
         );
+        // NOTE(jordan): the back-edge cannot be a child edge reversed
+        auto reached_as_node_child = std::find(
+          node->children.begin(),
+          node->children.end(),
+          reached_node
+        );
+        if (reached_as_node_child != node->children.end()) {
+          // reached is a child of node; false backedge
+          continue;
+        }
+        auto node_as_reached_child = std::find(
+          reached_node->children.begin(),
+          reached_node->children.end(),
+          node
+        );
+        if (node_as_reached_child != reached_node->children.end()) {
+          // node is a child of reached; false backedge
+          continue;
+        }
+        // NOTE(jordan): only add the backedge if it's unique
+        auto existing_backedge = std::find(
+          node->backedges.begin(),
+          node->backedges.end(),
+          reached_node
+        );
+        if (existing_backedge != node->backedges.end()) {
+          // backedge has already been found
+          continue;
+        }
+        tree.backedges.push_back(std::make_pair(node, reached_node));
         node->backedges.push_back(reached_node);
         reached_node->backedges.push_back(node);
-        tree.backedges.push_back(std::make_pair(node, reached_node));
       }
     }
   }
@@ -271,45 +311,36 @@ namespace SESE {
 namespace CycleEquivalence {
   struct BracketList; // NOTE(jordan): forward declarations for Edge.
   struct Node;
-  struct Edge { // The Program Structure Tree. Section 3.5. p177
+  using EdgeBase = SESE::AbstractEdge<Node>;
+  struct Edge : EdgeBase {
+    // The Program Structure Tree. Section 3.5. p177
     int cycle_class  = -1; // index of cycle equivalence class
     int recent_size  = -1; // size of bracket set when this was top edge
     int recent_class = -1; // equiv. class no. of *tree* edge where this
                            //   was most recently the topmost bracket
-    enum class Type { TreeEdge, BackEdge };
-    Edge (Node const * a, Node const * b, Type type)
-      : source(a), destination(b), type(type) {};
-    Type type;
-    Node const * source;
-    Node const * destination;
-    bool touches (Node const * node) {
-      return this->source == node || this->destination == node;
-    }
-    std::pair<bool, Node const *> other_end (Node const * node) const {
-      if (node == this->source) {
-        return { true, this->destination };
-      } else if (node == this->destination) {
-        return { true, this->source };
-      } else {
-        return { false, nullptr };
-      }
-    }
+    /* NOTE(jordan):
+     * According to PST paper, the Edge should contain a pointer to its
+     * BracketList node; however, since we are using a vector, the
+     * equivalent is to store the index.
+     */
+    int bracket_list_index = -1;
+    Edge (Node const * a, Node const * b) : EdgeBase(a, b) {};
   };
   struct BracketList { // The Program Structure Tree. Section 3.5. p177
-    std::vector<Edge const *> brackets;
+    std::vector<Edge *> brackets;
     // create() : BracketList
     BracketList () {}
-    BracketList (std::vector<Edge const *> bs) : brackets(bs) {}
+    BracketList (std::vector<Edge *> bs) : brackets(bs) {}
     // size (bl: BracketList) : integer
     int size () { return brackets.size(); }
     // push (bl: BracketList, e: bracket): BracketList
-    void push (Edge const & edge) {
-      brackets.push_back(&edge);
+    void push (Edge * edge) {
+      brackets.push_back(edge);
     }
     // top (bl: BracketList) : bracket
-    Edge const * top () { return brackets.back(); }
+    Edge * top () { return brackets.back(); }
     // delete (bl: BracketList, e: bracket) : BracketList
-    void del (Edge const & edge) {
+    void del (Edge const * edge) {
       std::remove(std::begin(brackets), std::end(brackets), &edge);
     }
     // concat (bl1, bl2: BracketList) : BracketList
@@ -326,10 +357,13 @@ namespace CycleEquivalence {
     BracketList bracket_list;
     std::vector<int> children;  // referenced by dfs-index
     std::vector<int> backedges; // referenced by dfs-index
-    SpanningTree::Node const * in_spanning_tree;
+    int parent;
   };
   struct Graph {
     std::vector<Node> nodes;
+    std::map<Node const *, std::vector<Edge>> tree_edges;
+    std::map<Node const *, std::vector<Edge>> backedges;
+    std::map<Node const *, std::vector<Edge>> capping_backedges;
     static bool descends_from (Node const &, Node const &);
   };
 
@@ -355,24 +389,22 @@ namespace CycleEquivalence {
         /* bracket_list */ {},
         /* children     */ std::move(children),
         /* backedges    */ std::move(backedges),
-        /* in_spanning_tree */ tree_node,
+        /* parent       */ tree_node->parent->dfs_index,
       });
     }
     // 2. Construct rich edge pointer graphs for children, back-edges.
-    std::map<Node const *, std::vector<Edge const *>> tree_graph;
-    std::map<Node const *, std::vector<Edge const *>> backedge_graph;
+    std::map<Node const *, std::vector<Edge>> tree_graph;
+    std::map<Node const *, std::vector<Edge>> backedge_graph;
     for (auto & node : nodes) {
-      std::vector<Edge const *> tree_edges = {};
-      std::vector<Edge const *> backedges  = {};
+      std::vector<Edge> tree_edges = {};
+      std::vector<Edge> backedges  = {};
       for (auto & child_index : node.children) {
         auto child = nodes.at(child_index);
-        auto edge  = new Edge(&node, &child, Edge::Type::TreeEdge);
-        tree_edges.push_back(edge);
+        tree_edges.push_back({ &node, &child });
       }
       for (auto & backedge_index : node.backedges) {
         auto dest = nodes.at(backedge_index);
-        auto edge = new Edge(&node, &dest, Edge::Type::BackEdge);
-        backedges.push_back(edge);
+        backedges.push_back({ &node, &dest });
       }
       tree_graph.insert({ &node, std::move(tree_edges) });
       backedge_graph.insert({ &node, std::move(backedges) });
@@ -380,27 +412,40 @@ namespace CycleEquivalence {
     // 3. Calculate cycle equivalence.
     // The Program Structure Tree. Section 3.5. Figure 4. p178
     // "for each node in reverse depth-first order"
+    std::map<Node const *, std::vector<Edge>> capping_backedges;
     for (auto it = nodes.rbegin(); it != nodes.rend(); it++) {
       Node & node = *it;
+      /* NOTE(jordan): preallocate a capping_backedges vector large enough
+       * we are confident it will not get resized. Otherwise, it's just...
+       * ugh. It gets annoying to try to keep track of memory if the
+       * vector resizes.
+       */
+      std::vector<Edge> cap_edges = {};
+      cap_edges.reserve(node.children.size());
+      capping_backedges.insert({ &node, std::move(cap_edges) });
+
       // "compute n.hi"
       // hi0 = min({ t.dfsnum | (n, t) is a back-edge })
-      auto hi0_node_it = std::min_element(
+      auto hi0_dfsnum_it = std::min_element(
         std::begin(node.backedges),
-        std::end(node.backedges),
-        [&] (int a_dfs_index, int b_dfs_index) {
-          return nodes.at(a_dfs_index).hi < nodes.at(b_dfs_index).hi;
-        }
+        std::end(node.backedges)
       );
-      int hi0 = nodes.at(*hi0_node_it).hi;
+      int hi0 = INT_MAX;
+      if (hi0_dfsnum_it != std::end(node.backedges)) {
+        hi0 = *hi0_dfsnum_it;
+      }
       // hi1 = min({ c.hi | c is a child of n })
-      auto hi1_node_it = std::min_element(
+      auto hi1_dfsnum_it = std::min_element(
         std::begin(node.children),
         std::end(node.children),
         [&] (int a_dfs_index, int b_dfs_index) {
           return nodes.at(a_dfs_index).hi < nodes.at(b_dfs_index).hi;
         }
       );
-      int hi1 = nodes.at(*hi1_node_it).hi;
+      int hi1 = INT_MAX;
+      if (hi1_dfsnum_it != std::end(node.children)) {
+        hi1 = nodes.at(*hi1_dfsnum_it).hi;
+      }
       // n.hi = min({ hi0, hi1 })
       node.hi = std::min(hi0, hi1);
       // hichild = any child c of n having c.hi = hi1
@@ -413,17 +458,19 @@ namespace CycleEquivalence {
           return nodes.at(child_dfs_index).hi == hi1;
         }
       );
-      auto hi2_node_it = std::min_element(
+      auto hi2_dfsnum_it = std::min_element(
         std::begin(lo_children),
         std::end(lo_children),
         [&] (int a_dfs_index, int b_dfs_index) {
           return nodes.at(a_dfs_index).hi < nodes.at(b_dfs_index).hi;
         }
       );
-      int hi2 = nodes.at(*hi2_node_it).hi;
+      int hi2 = INT_MAX;
+      if (hi2_dfsnum_it != std::end(lo_children)) {
+        hi2 = nodes.at(*hi2_dfsnum_it).hi;
+      }
 
       // "compute bracketlist"
-      std::map<Node const *, std::vector<Edge const *>> capping_backedges;
       // for each child c of n do
       for (auto child_dfs_index : node.children) {
         // n.blist = concat(c.blist, n.blist)
@@ -431,44 +478,82 @@ namespace CycleEquivalence {
         node.bracket_list.concat(child.bracket_list);
       }
       // for each capping backedge d from a descendant of n to n do
-      for (auto capping_backedge : capping_backedges.at(&node)) {
+      for (auto const & capping_backedge : capping_backedges.at(&node)) {
         // delete(n.blist, d)
-        auto other_result = capping_backedge->other_end(&node);
-        if (!other_result.first) assert(0 && "Edge did not have other end?");
+        auto other_result = capping_backedge.other_end(&node);
+        if (!other_result.first)
+          assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
         if (Graph::descends_from(node, *other)) {
           //BracketList::del(capping_backedge, node.bracket_list);
+          // TODO(jordan): descendancy relation
         }
       }
       // for each backedge b from a descendant of n to n do
-      for (auto todo : std::vector<int>({})) {
-        // delete(n.blist, b)
-        // if b.class undefined then: b.class = new-class()
+      for (auto & backedge : backedge_graph.at(&node)) {
+        auto other_result = backedge.other_end(&node);
+        if (!other_result.first)
+          assert(0 && "Edge did not have other end?");
+        Node const * other = other_result.second;
+        if (Graph::descends_from(node, *other)) {
+          // TODO(jordan): descendancy relation
+          // delete(n.blist, b)
+          // if b.class undefined then: b.class = new-class()
+        }
       }
       // for each backedge e from n to an ancestor of n do
-      for (auto todo : std::vector<int>({})) {
-        // push(n.blist, e)
+      for (auto const & backedge : backedge_graph.at(&node)) {
+        auto other_result = backedge.other_end(&node);
+        if (!other_result.first)
+          assert(0 && "Edge did not have other end?");
+        Node const * other = other_result.second;
+        if (Graph::descends_from(*other, node)) {
+          // TODO(jordan): descendancy relation
+          // push(n.blist, e)
+        }
       }
       // if hi2 < hi0:
       if (hi2 < hi0) {
         // "create capping backedge"
         // d = (n, node[hi1])
+        auto hi1_node = nodes.at(*hi1_dfsnum_it);
+        // FIXME(jordan): this will probably get deallocated too soon.
+        capping_backedges.at(&node).push_back({ &node, &hi1_node });
         // push(n.blist, d)
+        node.bracket_list.push(&capping_backedges.at(&node).back());
       }
 
       // "determine class for edge from parent(n) to n */
       // if n is not the root of dfs tree:
-      if (node.in_spanning_tree != tree.root) {
+      // NOTE(jordan): the root has dfs_index 0
+      if (node.parent != 0) {
         // let e be the tree edge from parent(n) to n
+        auto const & parent = nodes.at(node.parent);
+        auto & parent_edges = tree_graph.at(&parent);
+        auto parent_edge_it = std::find(
+          std::begin(parent_edges),
+          std::end(parent_edges),
+          [&] (Edge const & edge) { edge.touches(&node); }
+        );
+        Edge & parent_edge = *parent_edge_it;
         // b = top(n.blist)
+        Edge * bracket = node.bracket_list.top();
         // if b.recentSize != size(n.blist) then
+        if (bracket->recent_size != node.bracket_list.size()) {
           // b.recentSize = size(n.blist)
+          bracket->recent_size = node.bracket_list.size();
           // b.recentClass = new-class()
+          bracket->recent_class = -1/* ??? */;
+        }
         // e.class = b.recentClass
+        parent_edge.cycle_class = bracket->recent_class;
 
         // "check for e, b equivalences"
         // if b.recentSize = 1 then
+        if (bracket->recent_size == 1) {
           // b.class = e.class
+          bracket->cycle_class = parent_edge.cycle_class;
+        }
       }
     }
   }
