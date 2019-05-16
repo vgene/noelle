@@ -146,7 +146,8 @@ namespace SpanningTree {
     UndirectedCFG::Graph const &,
     UndirectedCFG::Node const &,
     std::vector<BasicBlock const *> &,
-    std::vector<SpanningTree::Node *> &
+    std::vector<SpanningTree::Node *> &,
+    Node const * parent
   );
 
   void compute_backedges (Tree &);
@@ -202,7 +203,8 @@ namespace SpanningTree {
       graph,
       graph.nodes.front(),
       visited,
-      tree.nodes
+      tree.nodes,
+      nullptr
     );
     SpanningTree::compute_backedges(tree);
     tree.empty = false;
@@ -214,7 +216,7 @@ namespace SpanningTree {
     UndirectedCFG::Node const & start,
     std::vector<BasicBlock const *> & visited,
     std::vector<SpanningTree::Node *> & tree_vector,
-    Node const * parent = nullptr
+    Node const * parent
   ) {
     // Construct node for this block
     SpanningTree::Node * node = new SpanningTree::Node(
@@ -318,12 +320,6 @@ namespace CycleEquivalence {
     int recent_size  = -1; // size of bracket set when this was top edge
     int recent_class = -1; // equiv. class no. of *tree* edge where this
                            //   was most recently the topmost bracket
-    /* NOTE(jordan):
-     * According to PST paper, the Edge should contain a pointer to its
-     * BracketList node; however, since we are using a vector, the
-     * equivalent is to store the index.
-     */
-    int bracket_list_index = -1;
     Edge (Node const * a, Node const * b) : EdgeBase(a, b) {};
   };
   struct BracketList { // The Program Structure Tree. Section 3.5. p177
@@ -341,7 +337,7 @@ namespace CycleEquivalence {
     Edge * top () { return brackets.back(); }
     // delete (bl: BracketList, e: bracket) : BracketList
     void del (Edge const * edge) {
-      std::remove(std::begin(brackets), std::end(brackets), &edge);
+      std::remove(std::begin(brackets), std::end(brackets), edge);
     }
     // concat (bl1, bl2: BracketList) : BracketList
     void concat (BracketList const & other) {
@@ -358,19 +354,46 @@ namespace CycleEquivalence {
     std::vector<int> children;  // referenced by dfs-index
     std::vector<int> backedges; // referenced by dfs-index
     int parent;
+    BasicBlock const * block;
+    bool descends_from (Node const &, std::vector<Node> const &) const;
   };
   struct Graph {
-    std::vector<Node> nodes;
-    std::map<Node const *, std::vector<Edge>> tree_edges;
-    std::map<Node const *, std::vector<Edge>> backedges;
-    std::map<Node const *, std::vector<Edge>> capping_backedges;
-    static bool descends_from (Node const &, Node const &);
+    bool empty;
+    int cycle_classes;
+    std::vector<Node> const nodes;
+    std::map<Node const *, std::vector<Edge>> const tree_edges;
+    std::map<Node const *, std::vector<Edge>> const backedges;
+    std::map<Node const *, std::vector<Edge>> const capping_backedges;
+    static Graph from_spanning_tree (SpanningTree::Tree const &);
+    static void print (Graph const &, llvm::raw_ostream &);
   };
 
-  Graph from_spanning_tree (SpanningTree::Tree const & tree) {
+  bool Node::descends_from (
+    Node const & ancestor,
+    std::vector<Node> const & ordered_nodes
+  ) const {
+    if (ancestor.dfs_index == this->dfs_index) {
+      return true;
+    }
+    return std::any_of(
+      std::begin(ancestor.children),
+      std::end(ancestor.children),
+      [&] (int child) {
+        return this->descends_from(
+          ordered_nodes.at(child),
+          ordered_nodes
+        );
+      }
+    );
+  }
+
+  Graph Graph::from_spanning_tree (SpanningTree::Tree const & tree) {
+    if (tree.empty) return { /* empty */ true };
+    // 0. Start the cycle class counter
+    int cycle_classes = 1;
     // 1. Add all nodes to the graph.
     std::vector<Node> nodes;
-    for (int dfs_ix = (tree.nodes.size() - 1); dfs_ix >= 0; dfs_ix--) {
+    for (int dfs_ix = 0; dfs_ix < tree.nodes.size(); dfs_ix++) {
       auto const * tree_node = tree.nodes.at(dfs_ix);
       // 1.a. compute children indices
       std::vector<int> children;
@@ -382,6 +405,11 @@ namespace CycleEquivalence {
       for (auto const * tree_backedge_node : tree_node->backedges) {
         backedges.push_back(tree_backedge_node->dfs_index);
       }
+      // 1.c.0 handle root parent index
+      int parent_index =
+        tree_node->parent != nullptr
+        ? tree_node->parent->dfs_index
+        : -1;
       // 1.c. push node onto graph
       nodes.push_back({
         /* hi           */ -1,
@@ -389,7 +417,8 @@ namespace CycleEquivalence {
         /* bracket_list */ {},
         /* children     */ std::move(children),
         /* backedges    */ std::move(backedges),
-        /* parent       */ tree_node->parent->dfs_index,
+        /* parent       */ parent_index,
+        /* block        */ tree_node->block,
       });
     }
     // 2. Construct rich edge pointer graphs for children, back-edges.
@@ -399,11 +428,11 @@ namespace CycleEquivalence {
       std::vector<Edge> tree_edges = {};
       std::vector<Edge> backedges  = {};
       for (auto & child_index : node.children) {
-        auto child = nodes.at(child_index);
+        Node const & child = nodes.at(child_index);
         tree_edges.push_back({ &node, &child });
       }
       for (auto & backedge_index : node.backedges) {
-        auto dest = nodes.at(backedge_index);
+        Node const & dest = nodes.at(backedge_index);
         backedges.push_back({ &node, &dest });
       }
       tree_graph.insert({ &node, std::move(tree_edges) });
@@ -472,21 +501,20 @@ namespace CycleEquivalence {
 
       // "compute bracketlist"
       // for each child c of n do
-      for (auto child_dfs_index : node.children) {
+      for (auto const & child_dfs_index : node.children) {
         // n.blist = concat(c.blist, n.blist)
-        auto child = nodes.at(child_dfs_index);
+        auto const & child = nodes.at(child_dfs_index);
         node.bracket_list.concat(child.bracket_list);
       }
       // for each capping backedge d from a descendant of n to n do
       for (auto const & capping_backedge : capping_backedges.at(&node)) {
-        // delete(n.blist, d)
         auto other_result = capping_backedge.other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
-        if (Graph::descends_from(node, *other)) {
-          //BracketList::del(capping_backedge, node.bracket_list);
-          // TODO(jordan): descendancy relation
+        if (other->descends_from(node, nodes)) {
+          // delete(n.blist, d);
+          node.bracket_list.del(&capping_backedge);
         }
       }
       // for each backedge b from a descendant of n to n do
@@ -495,26 +523,31 @@ namespace CycleEquivalence {
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
-        if (Graph::descends_from(node, *other)) {
-          // TODO(jordan): descendancy relation
+        if (other->descends_from(node, nodes)) {
           // delete(n.blist, b)
+          node.bracket_list.del(&backedge);
           // if b.class undefined then: b.class = new-class()
+          if (backedge.cycle_class == -1) {
+            backedge.cycle_class = cycle_classes++;
+          }
         }
       }
       // for each backedge e from n to an ancestor of n do
-      for (auto const & backedge : backedge_graph.at(&node)) {
+      for (auto & backedge : backedge_graph.at(&node)) {
         auto other_result = backedge.other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
-        if (Graph::descends_from(*other, node)) {
-          // TODO(jordan): descendancy relation
+        if (node.descends_from(*other, nodes)) {
           // push(n.blist, e)
+          node.bracket_list.push(&backedge);
         }
       }
       // if hi2 < hi0:
       if (hi2 < hi0) {
         // "create capping backedge"
+        llvm::errs() << "\"create capping backedge\"\n";
+        llvm::errs() << "hi2 " << hi2 << " hi0 " << hi0 << "\n";
         // d = (n, node[hi1])
         auto hi1_node = nodes.at(*hi1_dfsnum_it);
         // FIXME(jordan): this will probably get deallocated too soon.
@@ -525,17 +558,36 @@ namespace CycleEquivalence {
 
       // "determine class for edge from parent(n) to n */
       // if n is not the root of dfs tree:
-      // NOTE(jordan): the root has dfs_index 0
-      if (node.parent != 0) {
+      // NOTE(jordan): the root has a parent dfs_index of -1
+      if (node.parent != -1) {
         // let e be the tree edge from parent(n) to n
         auto const & parent = nodes.at(node.parent);
         auto & parent_edges = tree_graph.at(&parent);
-        auto parent_edge_it = std::find(
+        auto parent_edge_it = std::find_if(
           std::begin(parent_edges),
           std::end(parent_edges),
-          [&] (Edge const & edge) { edge.touches(&node); }
+          [&] (Edge const & edge) {
+            return edge.touches(&node);
+          }
+        );
+        assert(
+          parent_edge_it != std::end(parent_edges)
+          && "this node's parent has no edge to it??"
         );
         Edge & parent_edge = *parent_edge_it;
+        /* NOTE(jordan): Adjustment to the algorithm:
+         * ---------------------------------------------------------------
+         * - treat nodes having no brackets as belonging to the special
+         *   outermost cycle class, 0. This way, the LLVM CFG does not
+         *   need to be modified to contain a single "sink" node with an
+         *   artificial back-edge to the entry node in order for the
+         *   algorithm to run.
+         */
+        if (node.bracket_list.size() == 0) {
+          // No brackets → no cycles. This node's in the outermost region.
+          parent_edge.cycle_class = 0;
+          continue;
+        }
         // b = top(n.blist)
         Edge * bracket = node.bracket_list.top();
         // if b.recentSize != size(n.blist) then
@@ -543,7 +595,7 @@ namespace CycleEquivalence {
           // b.recentSize = size(n.blist)
           bracket->recent_size = node.bracket_list.size();
           // b.recentClass = new-class()
-          bracket->recent_class = -1/* ??? */;
+          bracket->recent_class = cycle_classes++;
         }
         // e.class = b.recentClass
         parent_edge.cycle_class = bracket->recent_class;
@@ -554,6 +606,38 @@ namespace CycleEquivalence {
           // b.class = e.class
           bracket->cycle_class = parent_edge.cycle_class;
         }
+      }
+    }
+
+    return {
+      /* empty              */ false,
+      /* cycle_classes      */ cycle_classes,
+      /* nodes              */ std::move(nodes),
+      /* tree_edges         */ std::move(tree_graph),
+      /* backedges          */ std::move(backedge_graph),
+      /* capping_backedges  */ std::move(capping_backedges),
+    };
+  }
+
+  void Graph::print (Graph const & graph, llvm::raw_ostream & os) {
+    os
+      << "Number of cycle classes:"
+      << " " << (graph.cycle_classes - 1)
+      << "\n";
+    os << "Nodes, Edges, Backedges:" << "\n";
+    for (Node const & node : graph.nodes) {
+      os << "Node (" << &node << "; BB " << node.block << ")";
+      std::vector<Edge> const & edges = graph.tree_edges.at(&node);
+      os << "\nEdges:\n";
+      for (Edge const & edge : edges) {
+        auto other_result = edge.other_end(&node);
+        if (!other_result.first)
+          assert(0 && "Edge did not have other end?");
+        Node const * other = other_result.second;
+        os
+          << "\tEdge → " << other
+          << "\n\tclass: " << edge.cycle_class
+          << "\n";
       }
     }
   }
@@ -572,7 +656,8 @@ namespace CycleEquivalence {
  * reasonably be copied into this one for easy reference.
  */
 namespace Note {
-  TalkDown::Annotation parse_metadata (MDNode * md) {
+  using Annotation = TalkDown::Annotation;
+  Annotation parse_metadata (MDNode * md) {
     // NOTE(jordan): MDNode is a tuple of MDString, ConstantInt pairs
     // NOTE(jordan): Use mdconst::dyn_extract API from Metadata.h#483
     TalkDown::Annotation result = {};
@@ -586,7 +671,7 @@ namespace Note {
     return result;
   }
 
-  void print_annotation (TalkDown::Annotation value, llvm::raw_ostream & os) {
+  void print_annotation (Annotation value, llvm::raw_ostream & os) {
     os << "Annotation {\n";
     for (auto annotation_entry : value) {
       os
@@ -658,29 +743,29 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   llvm::errs() << "\nSplit points constructed: " << splits.size() << "\n";
 
   // Perform splitting
-  for (SplitPoint & split : splits) {
-    llvm::errs()
-      << "Split:"
-      << "\n\tin block @ " << split->getParent()
-      << "\n\tbefore instruction @ " << split
-      << "\n\t" << *split
-      << "\n";
+  /* for (SplitPoint & split : splits) { */
+  /*   llvm::errs() */
+  /*     << "Split:" */
+  /*     << "\n\tin block @ " << split->getParent() */
+  /*     << "\n\tbefore instruction @ " << split */
+  /*     << "\n\t" << *split */
+  /*     << "\n"; */
 
-    // NOTE(jordan): DEBUG
-    /* BasicBlock::iterator I (split); */
-    /* Instruction * previous = &*--I; */
-    /* if (previous->hasMetadata()) { */
-    /*   MDNode * noelle_meta = previous->getMetadata("note.noelle"); */
-    /*   llvm::errs() << previous << " has Noelle annotation:\n"; */
-    /*   Annotation note = Note::parse_metadata(noelle_meta); */
-    /*   Note::print_annotation(note, llvm::errs()); */
-    /* } */
+  /*   // NOTE(jordan): DEBUG */
+  /*   /1* BasicBlock::iterator I (split); *1/ */
+  /*   /1* Instruction * previous = &*--I; *1/ */
+  /*   /1* if (previous->hasMetadata()) { *1/ */
+  /*   /1*   MDNode * noelle_meta = previous->getMetadata("note.noelle"); *1/ */
+  /*   /1*   llvm::errs() << previous << " has Noelle annotation:\n"; *1/ */
+  /*   /1*   Annotation note = Note::parse_metadata(noelle_meta); *1/ */
+  /*   /1*   Note::print_annotation(note, llvm::errs()); *1/ */
+  /*   /1* } *1/ */
 
-    // NOTE(jordan): using SplitBlock is recommended in the docs
-    llvm::SplitBlock(split->getParent(), split);
-  }
+  /*   // NOTE(jordan): using SplitBlock is recommended in the docs */
+  /*   llvm::SplitBlock(split->getParent(), split); */
+  /* } */
+  /* llvm::errs() << "Splits made.\n"; */
 
-  llvm::errs() << "Splits made.\n";
   // Construct SESE tree
   llvm::errs() << "\n";
   for (auto & function : M) {
@@ -700,6 +785,15 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       llvm::errs() << "(spanning tree is empty)";
     } else {
       SpanningTree::print(tree, llvm::errs());
+    }
+    llvm::errs() << "\n";
+    llvm::errs() << "Cycle Equiv. for " << function.getName() << "\n";
+    namespace Cycle = SESE::CycleEquivalence;
+    Cycle::Graph graph = Cycle::Graph::from_spanning_tree(tree);
+    if (graph.empty) {
+      llvm::errs() << "(cycle equivalence graph is empty)";
+    } else {
+      Cycle::Graph::print(graph, llvm::errs());
     }
     llvm::errs() << "\n\n";
   }
