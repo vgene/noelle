@@ -107,10 +107,10 @@ namespace UndirectedCFG {
     for (auto const & entry : graph.edges) {
       auto const & a = entry.first;
       auto const & b = entry.second;
-      os << "Edge:";
-      os << "\n\tNode (" << a << "; BB " << a->block << ")";
-      os << "\n\tNode (" << b << "; BB " << b->block << ")";
-      os << "\n";
+      os
+        << "\nEdge:"
+        << "\n\tNode (" << a << "; BB " << a->block << ")"
+        << "\n\tNode (" << b << "; BB " << b->block << ")";
     }
   }
 } // namespace UndirectedCFG
@@ -163,9 +163,8 @@ namespace SpanningTree {
       os << "Spanning Tree is empty.\n";
       return;
     }
-    os << "Nodes:\n";
     print_recursive(*tree.root, os);
-    os << "Back edges:";
+    os << "\nBack edges:";
     if (tree.backedges.size() == 0) os << "\n\t(none)";
     for (auto const & backedge : tree.backedges) {
       os
@@ -179,7 +178,7 @@ namespace SpanningTree {
     llvm::raw_ostream & os
   ) {
     os
-      << "Node (" << &start << "; BB " << start.block << ")"
+      << "\nNode (" << &start << "; BB " << start.block << ")"
       << "\n\tfirst instruction:"
       << "\n\t" << *start.block->begin()
       << "\n\tchildren:";
@@ -187,7 +186,6 @@ namespace SpanningTree {
     for (auto const & child : start.children) {
       os << "\n\t" << child;
     }
-    os << "\n";
     for (auto const & child : start.children) {
       SpanningTree::print_recursive(*child, os);
     }
@@ -365,7 +363,8 @@ namespace CycleEquivalence {
     std::map<Node const *, std::vector<Edge>> const backedges;
     std::map<Node const *, std::vector<Edge>> const capping_backedges;
     static Graph from_spanning_tree (SpanningTree::Tree const &);
-    static void print (Graph const &, llvm::raw_ostream &);
+    static void print (Graph const &, llvm::raw_ostream &, bool);
+    static void print_brackets (Graph const &, llvm::raw_ostream &);
   };
 
   bool Node::descends_from (
@@ -619,25 +618,77 @@ namespace CycleEquivalence {
     };
   }
 
-  void Graph::print (Graph const & graph, llvm::raw_ostream & os) {
-    os
-      << "Number of cycle classes:"
-      << " " << (graph.cycle_classes - 1)
-      << "\n";
-    os << "Nodes, Edges, Backedges:" << "\n";
+  void Graph::print (
+    Graph const & graph,
+    llvm::raw_ostream & os,
+    bool print_backedges = false
+  ) {
+    os << "Number of cycle classes: " << graph.cycle_classes << "\n";
     for (Node const & node : graph.nodes) {
-      os << "Node (" << &node << "; BB " << node.block << ")";
-      std::vector<Edge> const & edges = graph.tree_edges.at(&node);
-      os << "\nEdges:\n";
-      for (Edge const & edge : edges) {
+      os << "\nNode (" << &node << "; BB " << node.block << ")";
+      os << "\nFirst instruction:";
+      os << "\n\t" << *node.block->begin();
+      os << "\nEdges:";
+      for (Edge const & edge : graph.tree_edges.at(&node)) {
         auto other_result = edge.other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
         os
-          << "\tEdge → " << other
-          << "\n\tclass: " << edge.cycle_class
-          << "\n";
+          << "\n\tEdge (" << &edge << ") → " << other
+          << "\n\tclass: " << edge.cycle_class;
+      }
+      if (print_backedges) {
+        os << "\nBackedges:";
+        for (Edge const & backedge : graph.backedges.at(&node)) {
+          auto other_result = backedge.other_end(&node);
+          if (!other_result.first)
+            assert(0 && "Backedge did not have other end?");
+          Node const * other = other_result.second;
+          int print_class = backedge.cycle_class;
+          if (print_class == -1) {
+            print_class = backedge.recent_class;
+          }
+          os
+            << "\n\tBackedge (" << &backedge << ") → " << other
+            << "\n\tclass: " << print_class;
+        }
+        os << "\nCapping Backedges:";
+        for (Edge const & backedge : graph.capping_backedges.at(&node)) {
+          auto other_result = backedge.other_end(&node);
+          if (!other_result.first)
+            assert(0 && "Capping backedge did not have other end?");
+          Node const * other = other_result.second;
+          int print_class = backedge.cycle_class;
+          if (print_class == -1) {
+            print_class = backedge.recent_class;
+          }
+          os
+            << "\n\tCapping Backedge (" << &backedge << ") → " << other
+            << "\n\tclass: " << print_class;
+        }
+      }
+    }
+  }
+
+  void Graph::print_brackets (
+    Graph const & graph,
+    llvm::raw_ostream & os
+  ) {
+    os << "Graph BracketLists:";
+    for (Node const & node : graph.nodes) {
+      os
+        << "\nNode (" << &node << "; BB " << node.block << ")"
+        << "\nFirst instruction:"
+        << "\n\t" << *node.block->begin();
+      for (Edge const * bracket : node.bracket_list.brackets) {
+        int print_class = bracket->cycle_class;
+        if (print_class == -1) {
+          print_class = bracket->recent_class;
+        }
+        os
+          << "\n\tBracket (Edge): " << bracket
+          << " class: " << print_class;
       }
     }
   }
@@ -777,7 +828,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     } else {
       SESE::UndirectedCFG::print(undirected_cfg, llvm::errs());
     }
-    llvm::errs() << "\n";
+    llvm::errs() << "\n\n";
     llvm::errs() << "Spanning Tree for " << function.getName() << "\n";
     SpanningTree::Tree tree = SpanningTree::compute(undirected_cfg);
     if (tree.empty) {
@@ -786,14 +837,16 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     } else {
       SpanningTree::print(tree, llvm::errs());
     }
-    llvm::errs() << "\n";
+    llvm::errs() << "\n\n";
     llvm::errs() << "Cycle Equiv. for " << function.getName() << "\n";
     namespace Cycle = SESE::CycleEquivalence;
     Cycle::Graph graph = Cycle::Graph::from_spanning_tree(tree);
     if (graph.empty) {
       llvm::errs() << "(cycle equivalence graph is empty)";
     } else {
-      Cycle::Graph::print(graph, llvm::errs());
+      Cycle::Graph::print(graph, llvm::errs(), true);
+      llvm::errs() << "\n";
+      Cycle::Graph::print_brackets(graph, llvm::errs());
     }
     llvm::errs() << "\n\n";
   }
