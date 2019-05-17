@@ -56,8 +56,8 @@ namespace UndirectedCFG {
   struct Graph {
     bool empty = true;
     std::vector<Node> const nodes;
-    std::set<Edge> const edges;
-    std::map<Node const *, std::set<Edge const *>> const edge_map;
+    std::vector<Edge> const edges;
+    std::map<Node const *, std::vector<Edge const *>> const edge_map;
   };
 
   Graph compute (llvm::Function const & function) {
@@ -73,14 +73,14 @@ namespace UndirectedCFG {
     for (Node const & node : nodes) {
       block_to_node.insert({ node.block, &node });
     }
-    std::set<Edge> edges;
-    std::map<Node const *, std::set<Edge const *>> edge_map;
+    std::vector<Edge> edges;
+    std::map<Node const *, std::vector<Edge const *>> edge_map;
     for (Node const & node : nodes) {
       auto succ_it = llvm::successors(node.block);
-      std::set<Node const *> next;
-      for (auto succ : succ_it) next.insert(block_to_node.at(succ));
+      std::vector<Node const *> next;
+      for (auto succ : succ_it) next.push_back(block_to_node.at(succ));
       for (Node const * other : next) {
-        edges.insert({ &node, other });
+        edges.push_back({ &node, other });
       }
     }
     for (Edge const & edge : edges) {
@@ -92,8 +92,8 @@ namespace UndirectedCFG {
       if (edge_map.find(other) == edge_map.end()) {
         edge_map.insert({ other, {} });
       }
-      edge_map.at(node).insert(&edge);
-      edge_map.at(other).insert(&edge);
+      edge_map.at(node).push_back(&edge);
+      edge_map.at(other).push_back(&edge);
     }
     return {
       (edges.size() == 0),
