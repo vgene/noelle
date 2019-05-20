@@ -686,9 +686,9 @@ namespace CycleEquivalence {
           if (!other_result.first)
             assert(0 && "Backedge did not have other end?");
           Node const * other = other_result.second;
-          int print_class = backedge->cycle_class;
+          int print_class = backedge->recent_class;
           if (print_class == -1) {
-            print_class = backedge->recent_class;
+            print_class = backedge->cycle_class;
           }
           os
             << "\n\tBackedge (" << backedge << ") → " << other
@@ -700,9 +700,9 @@ namespace CycleEquivalence {
           if (!other_result.first)
             assert(0 && "Capping backedge did not have other end?");
           Node const * other = other_result.second;
-          int print_class = backedge.cycle_class;
+          int print_class = backedge.recent_class;
           if (print_class == -1) {
-            print_class = backedge.recent_class;
+            print_class = backedge.cycle_class;
           }
           os
             << "\n\tCapping Backedge (" << &backedge << ") → " << other
@@ -723,9 +723,9 @@ namespace CycleEquivalence {
         << "\nFirst instruction:"
         << "\n\t" << *node.block->begin();
       for (Edge const * bracket : node.bracket_list.brackets) {
-        int print_class = bracket->cycle_class;
+        int print_class = bracket->recent_class;
         if (print_class == -1) {
-          print_class = bracket->recent_class;
+          print_class = bracket->cycle_class;
         }
         os
           << "\n\tBracket (Edge): " << bracket
