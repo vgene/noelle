@@ -329,19 +329,34 @@ namespace CycleEquivalence {
     int size () { return brackets.size(); }
     // push (bl: BracketList, e: bracket): BracketList
     void push (Edge * edge) {
+      /* llvm::errs() */
+      /*   << "BracketList (" << this << ") pushing:" */
+      /*   << " " << edge */
+      /*   << " (" << edge->first << " → " << edge->second << ")" */
+      /*   << "\n"; */
       brackets.push_back(edge);
     }
     // top (bl: BracketList) : bracket
     Edge * top () { return brackets.back(); }
     // delete (bl: BracketList, e: bracket) : BracketList
     void del (Edge const * edge) {
-      std::remove(std::begin(brackets), std::end(brackets), edge);
+      auto last_removed = std::remove(
+        std::begin(brackets),
+        std::end(brackets),
+        edge
+      );
+      brackets.erase(last_removed, brackets.end());
     }
     // concat (bl1, bl2: BracketList) : BracketList
     void concat (BracketList const & other) {
-      brackets.reserve(brackets.size() + other.brackets.size());
-      for (auto other_bracket : other.brackets) {
-        brackets.push_back(other_bracket);
+      for (auto & other_bracket : other.brackets) {
+        /* llvm::errs() */
+        /*   << "BracketList (" << this << ") concating:" */
+        /*   << " " << other_bracket */
+        /*   << " (" << other_bracket->first */
+        /*   << " → " << other_bracket->second */
+        /*   << ")\n"; */
+        push(other_bracket);
       }
     }
   };
@@ -359,8 +374,9 @@ namespace CycleEquivalence {
     bool empty;
     int cycle_classes;
     std::vector<Node> const nodes;
+    std::vector<Edge> const backedges;
     std::map<Node const *, std::vector<Edge>> const tree_edges;
-    std::map<Node const *, std::vector<Edge>> const backedges;
+    std::map<Node const *, std::vector<Edge *>> const backedge_graph;
     std::map<Node const *, std::vector<Edge>> const capping_backedges;
     static Graph from_spanning_tree (SpanningTree::Tree const &);
     static void print (Graph const &, llvm::raw_ostream &, bool);
@@ -422,20 +438,28 @@ namespace CycleEquivalence {
     }
     // 2. Construct rich edge pointer graphs for children, back-edges.
     std::map<Node const *, std::vector<Edge>> tree_graph;
-    std::map<Node const *, std::vector<Edge>> backedge_graph;
+    std::map<Node const *, std::vector<Edge *>> backedge_graph;
+    std::vector<Edge> all_backedges;
     for (auto & node : nodes) {
       std::vector<Edge> tree_edges = {};
-      std::vector<Edge> backedges  = {};
       for (auto & child_index : node.children) {
         Node const & child = nodes.at(child_index);
         tree_edges.push_back({ &node, &child });
       }
       for (auto & backedge_index : node.backedges) {
         Node const & dest = nodes.at(backedge_index);
-        backedges.push_back({ &node, &dest });
+        all_backedges.push_back({ &node, &dest });
       }
       tree_graph.insert({ &node, std::move(tree_edges) });
-      backedge_graph.insert({ &node, std::move(backedges) });
+      backedge_graph.insert({ &node, {} });
+    }
+    for (auto & backedge : all_backedges) {
+      Node const & node = *backedge.first;
+      Node const & dest = *backedge.second;
+      auto & node_backedges = backedge_graph.at(&node);
+      auto & dest_backedges = backedge_graph.at(&dest);
+      node_backedges.push_back(&backedge);
+      dest_backedges.push_back(&backedge);
     }
     // 3. Calculate cycle equivalence.
     // The Program Structure Tree. Section 3.5. Figure 4. p178
@@ -479,13 +503,19 @@ namespace CycleEquivalence {
       // hichild = any child c of n having c.hi = hi1
       // hi2 = min({ c.hi | c is a child of n other than hichild })
       auto lo_children = node.children;
-      std::remove_if(
+      // NOTE(jordan): the idiosyncracies of C++'s std API are infinite
+      auto last_removed = std::remove_if(
         std::begin(lo_children),
         std::end(lo_children),
         [&] (int child_dfs_index) {
           return nodes.at(child_dfs_index).hi == hi1;
         }
       );
+      // NOTE(jordan): the idiosyncracies of C++'s std API are inscrutable
+      lo_children.erase(last_removed, lo_children.end());
+      // NOTE(jordan): oh C++ std, won't you please, won't you please stay
+      // NOTE(jordan): oh C++ std, won't you please just stay the saaaaame
+      // NOTE(jordan): baby, never change
       auto hi2_dfsnum_it = std::min_element(
         std::begin(lo_children),
         std::end(lo_children),
@@ -500,13 +530,13 @@ namespace CycleEquivalence {
 
       // "compute bracketlist"
       // for each child c of n do
-      for (auto const & child_dfs_index : node.children) {
+      for (int const child_dfs_index : node.children) {
         // n.blist = concat(c.blist, n.blist)
-        auto const & child = nodes.at(child_dfs_index);
+        Node const & child = nodes.at(child_dfs_index);
         node.bracket_list.concat(child.bracket_list);
       }
       // for each capping backedge d from a descendant of n to n do
-      for (auto const & capping_backedge : capping_backedges.at(&node)) {
+      for (Edge const & capping_backedge : capping_backedges.at(&node)) {
         auto other_result = capping_backedge.other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
@@ -517,36 +547,54 @@ namespace CycleEquivalence {
         }
       }
       // for each backedge b from a descendant of n to n do
-      for (auto & backedge : backedge_graph.at(&node)) {
-        auto other_result = backedge.other_end(&node);
+      for (Edge * backedge : backedge_graph.at(&node)) {
+        auto other_result = backedge->other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
+        llvm::errs()
+          << "For Node (" << &node << " ; BB " << node.block << ")"
+          << "\nConsider for deletion BACKEDGE (" << backedge << ")"
+          << "\n";
         Node const * other = other_result.second;
         if (other->descends_from(node, nodes)) {
+          llvm::errs()
+            << "DELETE BACKEDGE (" << &node << " ↔ " << other << ")\n";
           // delete(n.blist, b)
-          node.bracket_list.del(&backedge);
+          node.bracket_list.del(backedge);
           // if b.class undefined then: b.class = new-class()
-          if (backedge.cycle_class == -1) {
-            backedge.cycle_class = cycle_classes++;
+          if (backedge->cycle_class == -1) {
+            backedge->cycle_class = cycle_classes++;
           }
         }
       }
       // for each backedge e from n to an ancestor of n do
-      for (auto & backedge : backedge_graph.at(&node)) {
-        auto other_result = backedge.other_end(&node);
+      for (Edge * backedge : backedge_graph.at(&node)) {
+        auto other_result = backedge->other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
         if (node.descends_from(*other, nodes)) {
           // push(n.blist, e)
-          node.bracket_list.push(&backedge);
+          node.bracket_list.push(backedge);
         }
       }
       // if hi2 < hi0:
-      if (hi2 < hi0) {
+      /* NOTE(jordan): Adjustment to the algorithm:
+       * -----------------------------------------------------------------
+       * If a node has no backedges, it should not be given a capping
+       * backedge. This would imply somehow that it has descendants whose
+       * backedges reach different heights in the spanning tree; in fact,
+       * it simply means that this node belongs to the special outermost
+       * cycle class, 0. It will be assigned this cycle class so long as
+       * we do not create a capping backedge for it.
+       */
+      if ((hi2 < hi0) && (node.backedges.size() > 0)) {
         // "create capping backedge"
-        llvm::errs() << "\"create capping backedge\"\n";
-        llvm::errs() << "hi2 " << hi2 << " hi0 " << hi0 << "\n";
+        llvm::errs()
+          << "\"create capping backedge\""
+          << "\nNode (" << &node << " ; BB " << node.block << ")"
+          << "\nhi2 " << hi2 << " hi1 " << hi1 << " hi0 " << hi0
+          << "\n";
         // d = (n, node[hi1])
         auto hi1_node = nodes.at(*hi1_dfsnum_it);
         // FIXME(jordan): this will probably get deallocated too soon.
@@ -588,22 +636,22 @@ namespace CycleEquivalence {
           continue;
         }
         // b = top(n.blist)
-        Edge * bracket = node.bracket_list.top();
+        Edge & bracket = *node.bracket_list.top();
         // if b.recentSize != size(n.blist) then
-        if (bracket->recent_size != node.bracket_list.size()) {
+        if (bracket.recent_size != node.bracket_list.size()) {
           // b.recentSize = size(n.blist)
-          bracket->recent_size = node.bracket_list.size();
+          bracket.recent_size = node.bracket_list.size();
           // b.recentClass = new-class()
-          bracket->recent_class = cycle_classes++;
+          bracket.recent_class = cycle_classes++;
         }
         // e.class = b.recentClass
-        parent_edge.cycle_class = bracket->recent_class;
+        parent_edge.cycle_class = bracket.recent_class;
 
         // "check for e, b equivalences"
         // if b.recentSize = 1 then
-        if (bracket->recent_size == 1) {
+        if (bracket.recent_size == 1) {
           // b.class = e.class
-          bracket->cycle_class = parent_edge.cycle_class;
+          bracket.cycle_class = parent_edge.cycle_class;
         }
       }
     }
@@ -612,8 +660,9 @@ namespace CycleEquivalence {
       /* empty              */ false,
       /* cycle_classes      */ cycle_classes,
       /* nodes              */ std::move(nodes),
+      /* backedges          */ std::move(all_backedges),
       /* tree_edges         */ std::move(tree_graph),
-      /* backedges          */ std::move(backedge_graph),
+      /* backedge_graph     */ std::move(backedge_graph),
       /* capping_backedges  */ std::move(capping_backedges),
     };
   }
@@ -640,17 +689,17 @@ namespace CycleEquivalence {
       }
       if (print_backedges) {
         os << "\nBackedges:";
-        for (Edge const & backedge : graph.backedges.at(&node)) {
-          auto other_result = backedge.other_end(&node);
+        for (Edge const * backedge : graph.backedge_graph.at(&node)) {
+          auto other_result = backedge->other_end(&node);
           if (!other_result.first)
             assert(0 && "Backedge did not have other end?");
           Node const * other = other_result.second;
-          int print_class = backedge.cycle_class;
+          int print_class = backedge->cycle_class;
           if (print_class == -1) {
-            print_class = backedge.recent_class;
+            print_class = backedge->recent_class;
           }
           os
-            << "\n\tBackedge (" << &backedge << ") → " << other
+            << "\n\tBackedge (" << backedge << ") → " << other
             << "\n\tclass: " << print_class;
         }
         os << "\nCapping Backedges:";
@@ -844,9 +893,9 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     if (graph.empty) {
       llvm::errs() << "(cycle equivalence graph is empty)";
     } else {
-      Cycle::Graph::print(graph, llvm::errs(), true);
-      llvm::errs() << "\n";
-      Cycle::Graph::print_brackets(graph, llvm::errs());
+      Cycle::Graph::print(graph, llvm::errs());//, true);
+      /* llvm::errs() << "\n"; */
+      /* Cycle::Graph::print_brackets(graph, llvm::errs()); */
     }
     llvm::errs() << "\n\n";
   }
