@@ -467,11 +467,7 @@ namespace CycleEquivalence {
     std::map<Node const *, std::vector<Edge>> capping_backedges;
     for (auto it = nodes.rbegin(); it != nodes.rend(); it++) {
       Node & node = *it;
-      /* NOTE(jordan): preallocate a capping_backedges vector large enough
-       * we are confident it will not get resized. Otherwise, it's just...
-       * ugh. It gets annoying to try to keep track of memory if the
-       * vector resizes.
-       */
+      // NOTE(jordan): preallocate a capping_backedges vector.
       std::vector<Edge> cap_edges = {};
       cap_edges.reserve(node.children.size());
       capping_backedges.insert({ &node, std::move(cap_edges) });
@@ -551,14 +547,8 @@ namespace CycleEquivalence {
         auto other_result = backedge->other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
-        llvm::errs()
-          << "For Node (" << &node << " ; BB " << node.block << ")"
-          << "\nConsider for deletion BACKEDGE (" << backedge << ")"
-          << "\n";
         Node const * other = other_result.second;
         if (other->descends_from(node, nodes)) {
-          llvm::errs()
-            << "DELETE BACKEDGE (" << &node << " ↔ " << other << ")\n";
           // delete(n.blist, b)
           node.bracket_list.del(backedge);
           // if b.class undefined then: b.class = new-class()
@@ -578,6 +568,7 @@ namespace CycleEquivalence {
           node.bracket_list.push(backedge);
         }
       }
+
       // if hi2 < hi0:
       /* NOTE(jordan): Adjustment to the algorithm:
        * -----------------------------------------------------------------
@@ -588,6 +579,7 @@ namespace CycleEquivalence {
        * cycle class, 0. It will be assigned this cycle class so long as
        * we do not create a capping backedge for it.
        */
+      // NOTE(jordan): Only for UNSTRUCTURED loops! (untested.)
       if ((hi2 < hi0) && (node.backedges.size() > 0)) {
         // "create capping backedge"
         llvm::errs()
@@ -603,7 +595,7 @@ namespace CycleEquivalence {
         node.bracket_list.push(&capping_backedges.at(&node).back());
       }
 
-      // "determine class for edge from parent(n) to n */
+      // "determine class for edge from parent(n) to n
       // if n is not the root of dfs tree:
       // NOTE(jordan): the root has a parent dfs_index of -1
       if (node.parent != -1) {
@@ -619,7 +611,7 @@ namespace CycleEquivalence {
         );
         assert(
           parent_edge_it != std::end(parent_edges)
-          && "this node's parent has no edge to it??"
+          && "this node's parent has no edge to this node??"
         );
         Edge & parent_edge = *parent_edge_it;
         /* NOTE(jordan): Adjustment to the algorithm:
@@ -894,8 +886,8 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       llvm::errs() << "(cycle equivalence graph is empty)";
     } else {
       Cycle::Graph::print(graph, llvm::errs());//, true);
-      /* llvm::errs() << "\n"; */
-      /* Cycle::Graph::print_brackets(graph, llvm::errs()); */
+      llvm::errs() << "\n";
+      Cycle::Graph::print_brackets(graph, llvm::errs());
     }
     llvm::errs() << "\n\n";
   }
