@@ -23,7 +23,6 @@
 
 #include "TalkDown.hpp"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/CFG.h"
 
 namespace SESE {
@@ -57,11 +56,10 @@ namespace UndirectedCFG {
     bool empty = true;
     std::vector<Node> const nodes;
     std::vector<Edge> const edges;
-    std::map<Node const *, std::vector<Edge const *>> const edge_map;
   };
 
   Graph compute (llvm::Function const & function) {
-    if (function.begin() == function.end()) {
+    if (std::begin(function) == std::end(function)) {
       return {};
     }
     std::vector<Node> nodes;
@@ -69,12 +67,13 @@ namespace UndirectedCFG {
       nodes.push_back({ &block });
     }
     std::map<BasicBlock const *, Node const *> block_to_node;
-    // NOTE(jordan): for... reasons... this cannot be in the above loop.
+    /* NOTE(jordan): because the resizing of the vector causes pointers to
+     * change, this loop cannot be combined with the above loop.
+     */
     for (Node const & node : nodes) {
       block_to_node.insert({ node.block, &node });
     }
     std::vector<Edge> edges;
-    std::map<Node const *, std::vector<Edge const *>> edge_map;
     for (Node const & node : nodes) {
       auto succ_it = llvm::successors(node.block);
       std::vector<Node const *> next;
@@ -83,23 +82,10 @@ namespace UndirectedCFG {
         edges.push_back({ &node, other });
       }
     }
-    for (Edge const & edge : edges) {
-      auto node  = edge.first;
-      auto other = edge.second;
-      if (edge_map.find(node) == edge_map.end()) {
-        edge_map.insert({ node, {} });
-      }
-      if (edge_map.find(other) == edge_map.end()) {
-        edge_map.insert({ other, {} });
-      }
-      edge_map.at(node).push_back(&edge);
-      edge_map.at(other).push_back(&edge);
-    }
     return {
       (edges.size() == 0),
       std::move(nodes),
       std::move(edges),
-      std::move(edge_map)
     };
   }
 
@@ -122,39 +108,41 @@ namespace SpanningTree {
     Node (int dfs_index, BasicBlock const * block, Node const * parent)
       : dfs_index(dfs_index), block(block), parent(parent)
       {}
-    BasicBlock const * block;
     int dfs_index; // index in tree (simplifies cycle equiv.)
+    BasicBlock const * block;
     Node const * parent;
     std::vector<Node const *> children;
     std::vector<Node const *> backedges;
     std::vector<BasicBlock const *> bb_unused_children;
   };
   struct Tree {
-    bool empty = true;
+    bool empty;
     Node const * root;
     std::vector<Node *> nodes; // nodes ordered by visitation order
-    using BackEdge = std::pair<Node *, Node *>; // NOTE: undirected
-    std::vector<BackEdge> backedges; // NOTE: back-edges are unordered
+    using Backedge = std::pair<Node *, Node *>; // NOTE: undirected
+    std::vector<Backedge> backedges; // NOTE: back-edges are unordered
   };
 
-  SpanningTree::Tree * compute (
+  Tree compute (
     UndirectedCFG::Graph const &,
-    std::vector<SpanningTree::Node *> &
+    std::vector<Node *> &
   );
 
-  SpanningTree::Node * compute_recursive (
+  Node * compute_recursive (
     UndirectedCFG::Graph const &,
     UndirectedCFG::Node const &,
     std::vector<BasicBlock const *> &,
-    std::vector<SpanningTree::Node *> &,
+    std::vector<Node *> &,
     Node const * parent
   );
 
-  void compute_backedges (Tree &);
+  std::vector<Tree::Backedge> compute_backedges (
+    std::vector<Node *> const &
+  );
 
-  void print (SpanningTree::Tree const &, llvm::raw_ostream &);
+  void print (Tree const &, llvm::raw_ostream &);
   void print_recursive (
-    SpanningTree::Node const &,
+    Node const &,
     llvm::raw_ostream &
   );
 
@@ -174,7 +162,7 @@ namespace SpanningTree {
   }
 
   void print_recursive (
-    SpanningTree::Node const & start,
+    Node const & start,
     llvm::raw_ostream & os
   ) {
     os
@@ -191,40 +179,44 @@ namespace SpanningTree {
     }
   }
 
-  SpanningTree::Tree compute (UndirectedCFG::Graph const & graph) {
-    Tree tree = {};
+  Tree compute (UndirectedCFG::Graph const & graph) {
     if (graph.empty) {
-      return std::move(tree);
+      return { /* empty */ true };
     }
-    std::vector<BasicBlock const *> visited = {};
-    tree.root = SpanningTree::compute_recursive(
-      graph,
-      graph.nodes.front(),
-      visited,
-      tree.nodes,
-      nullptr
+    std::vector<Node *> nodes;
+    std::vector<BasicBlock const *> bb_visited = {};
+    Node * root = SpanningTree::compute_recursive(
+      /* graph        */ graph,
+      /* start        */ graph.nodes.front(),
+      /* bb_visited   */ bb_visited,
+      /* tree_vector  */ nodes,
+      /* parent       */ nullptr
     );
-    SpanningTree::compute_backedges(tree);
-    tree.empty = false;
-    return std::move(tree);
+    auto backedges = SpanningTree::compute_backedges(nodes);
+    return {
+      /* empty */ false,
+      std::move(root),
+      std::move(nodes),
+      std::move(backedges)
+    };
   }
 
-  SpanningTree::Node * compute_recursive (
+  Node * compute_recursive (
     UndirectedCFG::Graph const & graph,
     UndirectedCFG::Node const & start,
-    std::vector<BasicBlock const *> & visited,
-    std::vector<SpanningTree::Node *> & tree_vector,
+    std::vector<BasicBlock const *> & bb_visited,
+    std::vector<Node *> & tree_vector,
     Node const * parent
   ) {
     // Construct node for this block
-    SpanningTree::Node * node = new SpanningTree::Node(
+    Node * node = new SpanningTree::Node(
       tree_vector.size(),
       start.block,
       parent
     );
     tree_vector.push_back(node);
     // Visit this node (to prevent next nodes from looping back to it)
-    visited.push_back(node->block);
+    bb_visited.push_back(node->block);
     // Reach not-yet-visited children, add back-edges for visited children
     for (auto edge : graph.edges) {
       if (!edge.touches(&start)) {
@@ -235,18 +227,18 @@ namespace SpanningTree {
       assert(next_result.first && "Edge touches but has no other end?");
       auto next = next_result.second;
       auto visited_next = std::find(
-        visited.begin(),
-        visited.end(),
+        std::begin(bb_visited),
+        std::end(bb_visited),
         next->block
       );
-      if (visited_next != visited.end()) {
+      if (visited_next != bb_visited.end()) {
         node->bb_unused_children.push_back(next->block);
       } else {
         node->children.push_back(
           SpanningTree::compute_recursive(
             graph,
             *next,
-            visited,
+            bb_visited,
             tree_vector,
             node
           )
@@ -256,23 +248,26 @@ namespace SpanningTree {
     return node;
   }
 
-  void compute_backedges (SpanningTree::Tree & tree) {
-    for (auto & node : tree.nodes) {
+  std::vector<Tree::Backedge> compute_backedges (
+    std::vector<Node *> const & nodes
+  ) {
+    std::vector<Tree::Backedge> backedges = {};
+    for (auto & node : nodes) {
       for (auto & bb_backedge : node->bb_unused_children) {
-        SpanningTree::Node * reached_node = nullptr;
-        for (auto & seek_node : tree.nodes) {
+        Node * reached_node = nullptr;
+        for (auto & seek_node : nodes) {
           if (seek_node->block == bb_backedge) {
             reached_node = seek_node;
           }
         }
         assert(
           reached_node != nullptr
-          && "back-edge is not in tree?"
+          && "back-edge endpoint is not in tree"
         );
         // NOTE(jordan): the back-edge cannot be a child edge reversed
         auto reached_as_node_child = std::find(
-          node->children.begin(),
-          node->children.end(),
+          std::begin(node->children),
+          std::end(node->children),
           reached_node
         );
         if (reached_as_node_child != node->children.end()) {
@@ -280,8 +275,8 @@ namespace SpanningTree {
           continue;
         }
         auto node_as_reached_child = std::find(
-          reached_node->children.begin(),
-          reached_node->children.end(),
+          std::begin(reached_node->children),
+          std::end(reached_node->children),
           node
         );
         if (node_as_reached_child != reached_node->children.end()) {
@@ -290,19 +285,20 @@ namespace SpanningTree {
         }
         // NOTE(jordan): only add the backedge if it's unique
         auto existing_backedge = std::find(
-          node->backedges.begin(),
-          node->backedges.end(),
+          std::begin(node->backedges),
+          std::end(node->backedges),
           reached_node
         );
         if (existing_backedge != node->backedges.end()) {
           // backedge has already been found
           continue;
         }
-        tree.backedges.push_back(std::make_pair(node, reached_node));
+        backedges.push_back({ node, reached_node });
         node->backedges.push_back(reached_node);
         reached_node->backedges.push_back(node);
       }
     }
+    return std::move(backedges);
   }
 } // namespace SpanningTree
 } // namespace SESE
@@ -320,7 +316,8 @@ namespace CycleEquivalence {
                            //   was most recently the topmost bracket
     Edge (Node const * a, Node const * b) : EdgeBase(a, b) {};
   };
-  struct BracketList { // The Program Structure Tree. Section 3.5. p177
+  struct BracketList {
+    // The Program Structure Tree. Section 3.5. p177
     std::vector<Edge *> brackets;
     // create() : BracketList
     BracketList () {}
@@ -329,11 +326,6 @@ namespace CycleEquivalence {
     int size () { return brackets.size(); }
     // push (bl: BracketList, e: bracket): BracketList
     void push (Edge * edge) {
-      /* llvm::errs() */
-      /*   << "BracketList (" << this << ") pushing:" */
-      /*   << " " << edge */
-      /*   << " (" << edge->first << " → " << edge->second << ")" */
-      /*   << "\n"; */
       brackets.push_back(edge);
     }
     // top (bl: BracketList) : bracket
@@ -350,17 +342,12 @@ namespace CycleEquivalence {
     // concat (bl1, bl2: BracketList) : BracketList
     void concat (BracketList const & other) {
       for (auto & other_bracket : other.brackets) {
-        /* llvm::errs() */
-        /*   << "BracketList (" << this << ") concating:" */
-        /*   << " " << other_bracket */
-        /*   << " (" << other_bracket->first */
-        /*   << " → " << other_bracket->second */
-        /*   << ")\n"; */
         push(other_bracket);
       }
     }
   };
-  struct Node { // The Program Structure Tree. Section 3.5. p177
+  struct Node {
+    // The Program Structure Tree. Section 3.5. p177
     int hi;        // dfs_index of dest. nearest to root from a descndnt
     int dfs_index; // depth-first search index of node ("dfsnum")
     BracketList bracket_list;
@@ -372,11 +359,15 @@ namespace CycleEquivalence {
   };
   struct Graph {
     bool empty;
-    int cycle_classes;
     std::vector<Node> const nodes;
     std::vector<Edge> const backedges;
     std::map<Node const *, std::vector<Edge>> const tree_edges;
     std::map<Node const *, std::vector<Edge *>> const backedge_graph;
+    /* NOTE(jordan): capping backedges are only applicable to unstructured
+     * loops in complex control flow. Unstructured loops are theoretically
+     * handled by the algorithm, but we do not support them / haven't
+     * tested for them.
+     */
     std::map<Node const *, std::vector<Edge>> const capping_backedges;
     static Graph from_spanning_tree (SpanningTree::Tree const &);
     static void print (Graph const &, llvm::raw_ostream &, bool);
@@ -402,6 +393,27 @@ namespace CycleEquivalence {
     );
   }
 
+  /* The Program Structure Tree. Figure 4.
+   * The cycle equivalence algorithm.
+   *
+   * NOTE(jordan): While the algorithm as-presented in the paper supports
+   * complex unstructured control-flow (see p176, figure 3), such programs
+   * are generally regarded as "bad." (That is, they use 'goto'.) We've
+   * made the decision to implement the full algorithm, including the
+   * "capping backedges" that must be added to support unstructured loops,
+   * but we do not test or strictly intend to support unstructured loops.
+   *
+   * FIXME(jordan): The below code should be adapted to abort in the
+   * presence of an unstructured loop. Possibly: abort in any case where a
+   * capping back-edge would otherwise be created. More test cases should
+   * be added before it is decided that this is a safe choice.
+   *
+   * NOTE(jordan):
+   * Adaptations made from the paper: rather than construct an artificial
+   * start (source) and end (sink) node with an all-enclosing false
+   * back-edge, we simply treat any node with 0 brackets as a "top-most"
+   * node whose cycle class defaults to the special top-most class of 0.
+   */
   Graph Graph::from_spanning_tree (SpanningTree::Tree const & tree) {
     if (tree.empty) return { /* empty */ true };
     // 0. Start the cycle class counter
@@ -440,6 +452,7 @@ namespace CycleEquivalence {
     std::map<Node const *, std::vector<Edge>> tree_graph;
     std::map<Node const *, std::vector<Edge *>> backedge_graph;
     std::vector<Edge> all_backedges;
+    // 2.a. Compute the graph of tree edges (children).
     for (auto & node : nodes) {
       std::vector<Edge> tree_edges = {};
       for (auto & child_index : node.children) {
@@ -453,6 +466,7 @@ namespace CycleEquivalence {
       tree_graph.insert({ &node, std::move(tree_edges) });
       backedge_graph.insert({ &node, {} });
     }
+    // 2.b. Compute the graph of back-edges.
     for (auto & backedge : all_backedges) {
       Node const & node = *backedge.first;
       Node const & dest = *backedge.second;
@@ -650,7 +664,6 @@ namespace CycleEquivalence {
 
     return {
       /* empty              */ false,
-      /* cycle_classes      */ cycle_classes,
       /* nodes              */ std::move(nodes),
       /* backedges          */ std::move(all_backedges),
       /* tree_edges         */ std::move(tree_graph),
@@ -664,7 +677,6 @@ namespace CycleEquivalence {
     llvm::raw_ostream & os,
     bool print_backedges = false
   ) {
-    os << "Number of cycle classes: " << graph.cycle_classes << "\n";
     for (Node const & node : graph.nodes) {
       os << "\nNode (" << &node << "; BB " << node.block << ")";
       os << "\nFirst instruction:";
@@ -781,12 +793,13 @@ bool llvm::TalkDown::doInitialization (Module &M) {
 
 // TODO(jordan): it looks like this can be refactored as a FunctionPass
 bool llvm::TalkDown::runOnModule (Module &M) {
-  /* 1. Split BasicBlocks wherever the applicable annotation changes
-   * 2. Construct SESE tree at BasicBlock granularity; write query APIs
+  /* 1. Identify annotation ranges
+   * 2. Split BasicBlocks wherever the applicable annotation changes
+   * 3. Construct SESE tree at BasicBlock granularity; write query APIs
    */
 
   using SplitPoint = Instruction *;
-  llvm::SmallVector<SplitPoint, 8> splits;
+  std::vector<SplitPoint> splits = {};
 
   // Collect all the split points in each function
   // TODO(jordan): refactor this into its own function.
