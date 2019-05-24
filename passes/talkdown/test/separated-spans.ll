@@ -67,8 +67,8 @@ attributes #1 = { "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-
 !0 = !{i32 1, !"wchar_size", i32 4}
 !1 = !{!"clang version 7.0.0 "}
 !2 = !{!3}
-!3 = !{!"independent", i64 0}
+!3 = !{!"independent", !"0"}
 !4 = !{!3, !5}
-!5 = !{!"ordered", i64 1}
+!5 = !{!"ordered", !"1"}
 !6 = !{!3, !7}
-!7 = !{!"ordered", i64 0}
+!7 = !{!"ordered", !"0"}
