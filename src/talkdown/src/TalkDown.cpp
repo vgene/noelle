@@ -762,15 +762,15 @@ namespace CycleEquivalence {
 namespace Note {
   using Annotation = TalkDown::Annotation;
   Annotation parse_metadata (MDNode * md) {
-    // NOTE(jordan): MDNode is a tuple of MDString, ConstantInt pairs
+    // NOTE(jordan): MDNode is a tuple of MDString, MDString pairs
     // NOTE(jordan): Use mdconst::dyn_extract API from Metadata.h#483
-    TalkDown::Annotation result = {};
+    Annotation result = {};
     for (auto const & pair_operand : md->operands()) {
       using namespace llvm;
       auto * pair = dyn_cast<MDNode>(pair_operand.get());
       auto * key = dyn_cast<MDString>(pair->getOperand(0));
-      auto * val = mdconst::dyn_extract<ConstantInt>(pair->getOperand(1));
-      result.emplace(key->getString(), val->getSExtValue());
+      auto * val = dyn_cast<MDString>(pair->getOperand(1));
+      result.emplace(key->getString(), val->getString());
     }
     return result;
   }

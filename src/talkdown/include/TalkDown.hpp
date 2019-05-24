@@ -29,7 +29,7 @@ using namespace llvm;
 namespace llvm {
 
   struct TalkDown : public ModulePass {
-    using Annotation  = std::map<std::string, int64_t>;
+    using Annotation = std::map<std::string, std::string>;
     public:
       static char ID;
 
