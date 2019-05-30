@@ -53,17 +53,23 @@ namespace UndirectedCFG {
   };
   using Edge = SESE::AbstractEdge<Node>;
   struct Graph {
-    bool empty = true;
+    bool valid;
+    bool empty;
     std::vector<Node> const nodes;
     std::vector<Edge> const edges;
   };
 
   Graph compute (llvm::Function const & function) {
     if (std::begin(function) == std::end(function)) {
-      return {};
+      return { /* valid */ true, /* empty */ true };
     }
     std::vector<Node> nodes;
     for (llvm::BasicBlock const & block : function) {
+      // NOTE(jordan): do not handle unreachable blocks.
+      if (llvm::pred_begin(&block) == llvm::pred_end(&block)) {
+        llvm::errs() << "Unreachable block found! Aborting...\n";
+        return { /* valid */ false };
+      }
       nodes.push_back({ &block });
     }
     std::map<BasicBlock const *, Node const *> block_to_node;
@@ -83,13 +89,15 @@ namespace UndirectedCFG {
       }
     }
     return {
-      (edges.size() == 0),
-      std::move(nodes),
-      std::move(edges),
+      /* valid */ true,
+      /* empty */ (edges.size() == 0),
+      /* nodes */ std::move(nodes),
+      /* edges */ std::move(edges),
     };
   }
 
   void print (Graph const & graph, llvm::raw_ostream & os) {
+    assert(graph.valid);
     for (auto const & entry : graph.edges) {
       auto const & a = entry.first;
       auto const & b = entry.second;
@@ -115,11 +123,12 @@ namespace SpanningTree {
     std::vector<Node const *> backedges;
     std::vector<BasicBlock const *> bb_unused_children;
   };
+  using Backedge = SESE::AbstractEdge<Node>;
   struct Tree {
+    bool valid;
     bool empty;
     Node const * root;
     std::vector<Node *> nodes; // nodes ordered by visitation order
-    using Backedge = std::pair<Node *, Node *>; // NOTE: undirected
     std::vector<Backedge> backedges; // NOTE: back-edges are unordered
   };
 
@@ -136,7 +145,7 @@ namespace SpanningTree {
     Node const * parent
   );
 
-  std::vector<Tree::Backedge> compute_backedges (
+  std::vector<Backedge> compute_backedges (
     std::vector<Node *> const &
   );
 
@@ -147,10 +156,7 @@ namespace SpanningTree {
   );
 
   void print (Tree const & tree, llvm::raw_ostream & os) {
-    if (tree.empty) {
-      os << "Spanning Tree is empty.\n";
-      return;
-    }
+    assert(tree.valid);
     print_recursive(*tree.root, os);
     os << "\nBack edges:";
     if (tree.backedges.size() == 0) os << "\n\t(none)";
@@ -180,8 +186,11 @@ namespace SpanningTree {
   }
 
   Tree compute (UndirectedCFG::Graph const & graph) {
+    if (!graph.valid) {
+      return { /* valid */ false };
+    }
     if (graph.empty) {
-      return { /* empty */ true };
+      return { /* valid */ true, /* empty */ true };
     }
     std::vector<Node *> nodes;
     std::vector<BasicBlock const *> bb_visited = {};
@@ -194,6 +203,7 @@ namespace SpanningTree {
     );
     auto backedges = SpanningTree::compute_backedges(nodes);
     return {
+      /* valid */ true,
       /* empty */ false,
       std::move(root),
       std::move(nodes),
@@ -248,10 +258,10 @@ namespace SpanningTree {
     return node;
   }
 
-  std::vector<Tree::Backedge> compute_backedges (
+  std::vector<Backedge> compute_backedges (
     std::vector<Node *> const & nodes
   ) {
-    std::vector<Tree::Backedge> backedges = {};
+    std::vector<Backedge> backedges = {};
     for (auto & node : nodes) {
       for (auto & bb_backedge : node->bb_unused_children) {
         Node * reached_node = nullptr;
@@ -284,18 +294,22 @@ namespace SpanningTree {
           continue;
         }
         // NOTE(jordan): only add the backedge if it's unique
-        auto existing_backedge = std::find(
-          std::begin(node->backedges),
-          std::end(node->backedges),
-          reached_node
+        auto existing_backedge = std::find_if(
+          std::begin(backedges),
+          std::end(backedges),
+          [&] (Backedge const & backedge) {
+            return true
+              && backedge.touches(node)
+              && backedge.touches(reached_node)
+              ;
+          }
         );
-        if (existing_backedge != node->backedges.end()) {
+        if (existing_backedge != std::end(backedges)) {
           // backedge has already been found
           continue;
         }
         backedges.push_back({ node, reached_node });
         node->backedges.push_back(reached_node);
-        reached_node->backedges.push_back(node);
       }
     }
     return std::move(backedges);
@@ -321,13 +335,10 @@ namespace CycleEquivalence {
     std::vector<Edge *> brackets;
     // create() : BracketList
     BracketList () {}
-    BracketList (std::vector<Edge *> bs) : brackets(bs) {}
     // size (bl: BracketList) : integer
     int size () { return brackets.size(); }
     // push (bl: BracketList, e: bracket): BracketList
-    void push (Edge * edge) {
-      brackets.push_back(edge);
-    }
+    void push (Edge * edge) { brackets.push_back(edge); }
     // top (bl: BracketList) : bracket
     Edge * top () { return brackets.back(); }
     // delete (bl: BracketList, e: bracket) : BracketList
@@ -358,10 +369,12 @@ namespace CycleEquivalence {
     bool descends_from (Node const &, std::vector<Node> const &) const;
   };
   struct Graph {
+    bool valid;
     bool empty;
     std::vector<Node> const nodes;
+    std::vector<Edge> const edges;
     std::vector<Edge> const backedges;
-    std::map<Node const *, std::vector<Edge>> const tree_edges;
+    std::map<Node const *, std::vector<Edge *>> const tree_edges;
     std::map<Node const *, std::vector<Edge *>> const backedge_graph;
     /* NOTE(jordan): capping backedges are only applicable to unstructured
      * loops in complex control flow. Unstructured loops are theoretically
@@ -369,7 +382,7 @@ namespace CycleEquivalence {
      * tested for them.
      */
     std::map<Node const *, std::vector<Edge>> const capping_backedges;
-    static Graph from_spanning_tree (SpanningTree::Tree const &);
+    static Graph compute (SpanningTree::Tree const &);
     static void print (Graph const &, llvm::raw_ostream &, bool);
     static void print_brackets (Graph const &, llvm::raw_ostream &);
   };
@@ -414,8 +427,13 @@ namespace CycleEquivalence {
    * back-edge, we simply treat any node with 0 brackets as a "top-most"
    * node whose cycle class defaults to the special top-most class of 0.
    */
-  Graph Graph::from_spanning_tree (SpanningTree::Tree const & tree) {
-    if (tree.empty) return { /* empty */ true };
+  Graph Graph::compute (SpanningTree::Tree const & tree) {
+    if (!tree.valid) {
+      return { /* valid */ false };
+    }
+    if (tree.empty) {
+      return { /* valid */ true, /* empty */ true };
+    }
     // 0. Start the cycle class counter
     int cycle_classes = 1;
     // 1. Add all nodes to the graph.
@@ -449,24 +467,34 @@ namespace CycleEquivalence {
       });
     }
     // 2. Construct rich edge pointer graphs for children, back-edges.
-    std::map<Node const *, std::vector<Edge>> tree_graph;
+    std::map<Node const *, std::vector<Edge *>> tree_graph;
     std::map<Node const *, std::vector<Edge *>> backedge_graph;
     std::vector<Edge> all_backedges;
+    std::vector<Edge> all_edges;
     // 2.a. Compute the graph of tree edges (children).
     for (auto & node : nodes) {
       std::vector<Edge> tree_edges = {};
       for (auto & child_index : node.children) {
         Node const & child = nodes.at(child_index);
-        tree_edges.push_back({ &node, &child });
+        all_edges.push_back({ &node, &child });
       }
       for (auto & backedge_index : node.backedges) {
         Node const & dest = nodes.at(backedge_index);
         all_backedges.push_back({ &node, &dest });
       }
-      tree_graph.insert({ &node, std::move(tree_edges) });
+      tree_graph.insert({ &node, {} });
       backedge_graph.insert({ &node, {} });
     }
-    // 2.b. Compute the graph of back-edges.
+    // 2.b. Compute the graph of forward-edges.
+    for (auto & edge : all_edges) {
+      Node const & node = *edge.first;
+      Node const & dest = *edge.second;
+      auto & node_edges = tree_graph.at(&node);
+      auto & dest_edges = tree_graph.at(&dest);
+      node_edges.push_back(&edge);
+      dest_edges.push_back(&edge);
+    }
+    // 2.c. Compute the graph of back-edges.
     for (auto & backedge : all_backedges) {
       Node const & node = *backedge.first;
       Node const & dest = *backedge.second;
@@ -567,6 +595,10 @@ namespace CycleEquivalence {
           node.bracket_list.del(backedge);
           // if b.class undefined then: b.class = new-class()
           if (backedge->cycle_class == -1) {
+            llvm::errs()
+              << "Cycle class wasn't defined..."
+              << " @ " << backedge << " class " << cycle_classes
+              << "\n";
             backedge->cycle_class = cycle_classes++;
           }
         }
@@ -619,15 +651,15 @@ namespace CycleEquivalence {
         auto parent_edge_it = std::find_if(
           std::begin(parent_edges),
           std::end(parent_edges),
-          [&] (Edge const & edge) {
-            return edge.touches(&node);
+          [&] (Edge const * edge) {
+            return edge->touches(&node);
           }
         );
         assert(
           parent_edge_it != std::end(parent_edges)
           && "this node's parent has no edge to this node??"
         );
-        Edge & parent_edge = *parent_edge_it;
+        Edge & parent_edge = **parent_edge_it;
         /* NOTE(jordan): Adjustment to the algorithm:
          * ---------------------------------------------------------------
          * - treat nodes having no brackets as belonging to the special
@@ -650,6 +682,10 @@ namespace CycleEquivalence {
           // b.recentClass = new-class()
           bracket.recent_class = cycle_classes++;
         }
+        llvm::errs()
+          << "Assigning Edge (" << &parent_edge << ") class from Bracket"
+          << " (" << &bracket << "): " << bracket.recent_class
+          << "\n";
         // e.class = b.recentClass
         parent_edge.cycle_class = bracket.recent_class;
 
@@ -663,8 +699,10 @@ namespace CycleEquivalence {
     }
 
     return {
+      /* valid              */ true,
       /* empty              */ false,
       /* nodes              */ std::move(nodes),
+      /* edges              */ std::move(all_edges),
       /* backedges          */ std::move(all_backedges),
       /* tree_edges         */ std::move(tree_graph),
       /* backedge_graph     */ std::move(backedge_graph),
@@ -677,19 +715,21 @@ namespace CycleEquivalence {
     llvm::raw_ostream & os,
     bool print_backedges = false
   ) {
+    assert(graph.valid);
     for (Node const & node : graph.nodes) {
       os << "\nNode (" << &node << "; BB " << node.block << ")";
       os << "\nFirst instruction:";
       os << "\n\t" << *node.block->begin();
       os << "\nEdges:";
-      for (Edge const & edge : graph.tree_edges.at(&node)) {
-        auto other_result = edge.other_end(&node);
+      for (Edge const * edge : graph.tree_edges.at(&node)) {
+        auto other_result = edge->other_end(&node);
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
         os
-          << "\n\tEdge (" << &edge << ") → " << other
-          << "\n\tclass: " << edge.cycle_class;
+          << "\n\tEdge (" << edge << ")"
+          << ": " << edge->first << " → " << edge->second
+          << "\n\tclass: " << edge->cycle_class;
       }
       if (print_backedges) {
         os << "\nBackedges:";
@@ -698,10 +738,7 @@ namespace CycleEquivalence {
           if (!other_result.first)
             assert(0 && "Backedge did not have other end?");
           Node const * other = other_result.second;
-          int print_class = backedge->recent_class;
-          if (print_class == -1) {
-            print_class = backedge->cycle_class;
-          }
+          int print_class = backedge->cycle_class;
           os
             << "\n\tBackedge (" << backedge << ") → " << other
             << "\n\tclass: " << print_class;
@@ -712,10 +749,7 @@ namespace CycleEquivalence {
           if (!other_result.first)
             assert(0 && "Capping backedge did not have other end?");
           Node const * other = other_result.second;
-          int print_class = backedge.recent_class;
-          if (print_class == -1) {
-            print_class = backedge.cycle_class;
-          }
+          int print_class = backedge.cycle_class;
           os
             << "\n\tCapping Backedge (" << &backedge << ") → " << other
             << "\n\tclass: " << print_class;
@@ -728,6 +762,7 @@ namespace CycleEquivalence {
     Graph const & graph,
     llvm::raw_ostream & os
   ) {
+    assert(graph.valid);
     os << "Graph BracketLists:";
     for (Node const & node : graph.nodes) {
       os
@@ -735,10 +770,7 @@ namespace CycleEquivalence {
         << "\nFirst instruction:"
         << "\n\t" << *node.block->begin();
       for (Edge const * bracket : node.bracket_list.brackets) {
-        int print_class = bracket->recent_class;
-        if (print_class == -1) {
-          print_class = bracket->cycle_class;
-        }
+        int print_class = bracket->cycle_class;
         os
           << "\n\tBracket (Edge): " << bracket
           << " class: " << print_class;
@@ -874,33 +906,39 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   // Construct SESE tree
   llvm::errs() << "\n";
   for (auto & function : M) {
+    namespace UndirectedCFG = SESE::UndirectedCFG;
     namespace SpanningTree = SESE::SpanningTree;
-    auto undirected_cfg = SESE::UndirectedCFG::compute(function);
+    namespace Cycle = SESE::CycleEquivalence;
+    auto undirected_cfg = UndirectedCFG::compute(function);
     llvm::errs() << "Undirected CFG for " << function.getName() << "\n";
-    if (undirected_cfg.empty) {
+    if (!undirected_cfg.valid) {
+      llvm::errs() << "(graph is invalid)";
+    } else if (undirected_cfg.empty) {
       llvm::errs() << "(graph is empty)";
     } else {
-      SESE::UndirectedCFG::print(undirected_cfg, llvm::errs());
+      UndirectedCFG::print(undirected_cfg, llvm::errs());
     }
     llvm::errs() << "\n\n";
     llvm::errs() << "Spanning Tree for " << function.getName() << "\n";
     SpanningTree::Tree tree = SpanningTree::compute(undirected_cfg);
-    if (tree.empty) {
-      // NOTE(jordan): DEBUG
+    if (!tree.valid) {
+      llvm::errs() << "(spanning tree is invalid)";
+    } else if (tree.empty) {
       llvm::errs() << "(spanning tree is empty)";
     } else {
       SpanningTree::print(tree, llvm::errs());
     }
     llvm::errs() << "\n\n";
     llvm::errs() << "Cycle Equiv. for " << function.getName() << "\n";
-    namespace Cycle = SESE::CycleEquivalence;
-    Cycle::Graph graph = Cycle::Graph::from_spanning_tree(tree);
-    if (graph.empty) {
+    Cycle::Graph graph = Cycle::Graph::compute(tree);
+    if (!graph.valid) {
+      llvm::errs() << "(cycle equivalence graph is invalid)";
+    } else if (graph.empty) {
       llvm::errs() << "(cycle equivalence graph is empty)";
     } else {
-      Cycle::Graph::print(graph, llvm::errs());//, true);
-      llvm::errs() << "\n";
-      Cycle::Graph::print_brackets(graph, llvm::errs());
+      Cycle::Graph::print(graph, llvm::errs(), true);
+      /* llvm::errs() << "\n"; */
+      /* Cycle::Graph::print_brackets(graph, llvm::errs()); */
     }
     llvm::errs() << "\n\n";
   }
