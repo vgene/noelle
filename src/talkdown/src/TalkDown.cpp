@@ -24,6 +24,7 @@
 #include "TalkDown.hpp"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 
 namespace SESE {
 template <typename NodeTy>
@@ -956,6 +957,8 @@ void llvm::TalkDown::getAnalysisUsage (AnalysisUsage &AU) const {
    * are split. It would be difficult to not do this, but possible.
    */
   /* AU.setPreservesAll(); */
+  // NOTE(jordan): ensures a single exit node for each IR function.
+  AU.addRequired<UnifyFunctionExitNodes>();
   return ;
 }
 
