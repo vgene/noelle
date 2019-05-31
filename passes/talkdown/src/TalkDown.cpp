@@ -56,6 +56,7 @@ namespace UndirectedCFG {
   struct Graph {
     bool valid;
     bool empty;
+    Node const * exit;
     std::vector<Node> const nodes;
     std::vector<Edge> const edges;
   };
@@ -76,25 +77,29 @@ namespace UndirectedCFG {
       }
       nodes.push_back({ &block });
     }
-    std::map<BasicBlock const *, Node const *> block_to_node;
     /* NOTE(jordan): because the resizing of the vector causes pointers to
      * change, this loop cannot be combined with the above loop.
      */
+    std::map<BasicBlock const *, Node const *> block_to_node;
     for (Node const & node : nodes) {
       block_to_node.insert({ node.block, &node });
     }
+    Node const * exit = nullptr;
     std::vector<Edge> edges;
     for (Node const & node : nodes) {
       auto succ_it = llvm::successors(node.block);
       std::vector<Node const *> next;
       for (auto succ : succ_it) next.push_back(block_to_node.at(succ));
+      if (next.size() == 0) exit = &node;
       for (Node const * other : next) {
         edges.push_back({ &node, other });
       }
     }
+    assert(exit != nullptr);
     return {
       /* valid */ true,
       /* empty */ (edges.size() == 0),
+      /* exit  */ std::move(exit),
       /* nodes */ std::move(nodes),
       /* edges */ std::move(edges),
     };
@@ -132,6 +137,7 @@ namespace SpanningTree {
     bool valid;
     bool empty;
     Node const * root;
+    Node const * exit;
     std::vector<Node *> nodes; // nodes ordered by visitation order
     std::vector<Backedge> backedges; // NOTE: back-edges are unordered
   };
@@ -153,11 +159,13 @@ namespace SpanningTree {
     std::vector<Node *> const &
   );
 
-  void print (Tree const &, llvm::raw_ostream &);
-  void print_recursive (
-    Node const &,
-    llvm::raw_ostream &
+  Node const * identify_exit (
+    std::vector<Node *> const &,
+    UndirectedCFG::Node const *
   );
+
+  void print (Tree const &, llvm::raw_ostream &);
+  void print_recursive (Node const &, llvm::raw_ostream &);
 
   void print (Tree const & tree, llvm::raw_ostream & os) {
     assert(tree.valid);
@@ -171,10 +179,7 @@ namespace SpanningTree {
     }
   }
 
-  void print_recursive (
-    Node const & start,
-    llvm::raw_ostream & os
-  ) {
+  void print_recursive (Node const & start, llvm::raw_ostream & os) {
     os
       << "\nNode (" << &start << "; BB " << start.block << ")"
       << "\n\tfirst instruction:"
@@ -206,10 +211,12 @@ namespace SpanningTree {
       /* parent       */ nullptr
     );
     auto backedges = SpanningTree::compute_backedges(nodes);
+    auto exit      = SpanningTree::identify_exit(nodes, graph.exit);
     return {
       /* valid */ true,
       /* empty */ false,
       std::move(root),
+      std::move(exit),
       std::move(nodes),
       std::move(backedges)
     };
@@ -318,6 +325,19 @@ namespace SpanningTree {
     }
     return std::move(backedges);
   }
+
+  Node const * identify_exit (
+    std::vector<Node *> const & nodes,
+    UndirectedCFG::Node const * cfg_exit
+  ) {
+    return *std::find_if(
+      std::begin(nodes),
+      std::end(nodes),
+      [&] (Node const * node) {
+        return node->block == cfg_exit->block;
+      }
+    );
+  }
 } // namespace SpanningTree
 } // namespace SESE
 
@@ -375,6 +395,8 @@ namespace CycleEquivalence {
   struct Graph {
     bool valid;
     bool empty;
+    Node const * start;
+    Node const * exit;
     std::vector<Node> const nodes;
     std::vector<Edge> const edges;
     std::vector<Edge> const backedges;
@@ -439,9 +461,9 @@ namespace CycleEquivalence {
       return { /* valid */ true, /* empty */ true };
     }
     // 0. Start the cycle class counter
-    int cycle_classes = 1;
-    // 1. Add all nodes to the graph.
-    std::vector<Node> nodes;
+    int cycle_classes = 0;
+    // 1. Add all dfs_nodes to the graph.
+    std::vector<Node> dfs_nodes;
     for (int dfs_ix = 0; dfs_ix < tree.nodes.size(); dfs_ix++) {
       auto const * tree_node = tree.nodes.at(dfs_ix);
       // 1.a. compute children indices
@@ -460,7 +482,7 @@ namespace CycleEquivalence {
         ? tree_node->parent->dfs_index
         : -1;
       // 1.c. push node onto graph
-      nodes.push_back({
+      dfs_nodes.push_back({
         /* hi           */ -1,
         /* dfs_index    */ dfs_ix,
         /* bracket_list */ {},
@@ -475,21 +497,34 @@ namespace CycleEquivalence {
     std::map<Node const *, std::vector<Edge *>> backedge_graph;
     std::vector<Edge> all_backedges;
     std::vector<Edge> all_edges;
-    // 2.a. Compute the graph of tree edges (children).
-    for (auto & node : nodes) {
-      std::vector<Edge> tree_edges = {};
+    // 2.a. Compute sets of edges and backedges & initialized graphs.
+    for (auto & node : dfs_nodes) {
       for (auto & child_index : node.children) {
-        Node const & child = nodes.at(child_index);
+        Node const & child = dfs_nodes.at(child_index);
         all_edges.push_back({ &node, &child });
       }
       for (auto & backedge_index : node.backedges) {
-        Node const & dest = nodes.at(backedge_index);
+        Node const & dest = dfs_nodes.at(backedge_index);
         all_backedges.push_back({ &node, &dest });
       }
       tree_graph.insert({ &node, {} });
       backedge_graph.insert({ &node, {} });
     }
-    // 2.b. Compute the graph of forward-edges.
+    // 2.b. Add the artificial back-edge from the exit to the start node
+    // NOTE(jordan): assumes function.begin() is the entry node
+    Node & start = dfs_nodes.at(0);
+    int exit_node_dfs_index = -1;
+    for (auto const * tree_node : tree.nodes) {
+      if (tree_node == tree.exit) {
+        exit_node_dfs_index = tree_node->dfs_index;
+      }
+    }
+    assert(exit_node_dfs_index != -1);
+    Node & exit = dfs_nodes.at(exit_node_dfs_index);
+    all_backedges.push_back({ &start, &exit });
+    start.backedges.push_back(exit.dfs_index);
+    if (&start != &exit) exit.backedges.push_back(start.dfs_index);
+    // 2.c. Compute the graph of forward-edges.
     for (auto & edge : all_edges) {
       Node const & node = *edge.first;
       Node const & dest = *edge.second;
@@ -498,7 +533,7 @@ namespace CycleEquivalence {
       node_edges.push_back(&edge);
       dest_edges.push_back(&edge);
     }
-    // 2.c. Compute the graph of back-edges.
+    // 2.d. Compute the graph of back-edges.
     for (auto & backedge : all_backedges) {
       Node const & node = *backedge.first;
       Node const & dest = *backedge.second;
@@ -511,7 +546,7 @@ namespace CycleEquivalence {
     // The Program Structure Tree. Section 3.5. Figure 4. p178
     // "for each node in reverse depth-first order"
     std::map<Node const *, std::vector<Edge>> capping_backedges;
-    for (auto it = nodes.rbegin(); it != nodes.rend(); it++) {
+    for (auto it = dfs_nodes.rbegin(); it != dfs_nodes.rend(); it++) {
       Node & node = *it;
       // NOTE(jordan): preallocate a capping_backedges vector.
       std::vector<Edge> cap_edges = {};
@@ -533,12 +568,12 @@ namespace CycleEquivalence {
         std::begin(node.children),
         std::end(node.children),
         [&] (int a_dfs_index, int b_dfs_index) {
-          return nodes.at(a_dfs_index).hi < nodes.at(b_dfs_index).hi;
+          return dfs_nodes.at(a_dfs_index).hi < dfs_nodes.at(b_dfs_index).hi;
         }
       );
       int hi1 = INT_MAX;
       if (hi1_dfsnum_it != std::end(node.children)) {
-        hi1 = nodes.at(*hi1_dfsnum_it).hi;
+        hi1 = dfs_nodes.at(*hi1_dfsnum_it).hi;
       }
       // n.hi = min({ hi0, hi1 })
       node.hi = std::min(hi0, hi1);
@@ -550,7 +585,7 @@ namespace CycleEquivalence {
         std::begin(lo_children),
         std::end(lo_children),
         [&] (int child_dfs_index) {
-          return nodes.at(child_dfs_index).hi == hi1;
+          return dfs_nodes.at(child_dfs_index).hi == hi1;
         }
       );
       // NOTE(jordan): the idiosyncracies of C++'s std API are inscrutable
@@ -562,19 +597,18 @@ namespace CycleEquivalence {
         std::begin(lo_children),
         std::end(lo_children),
         [&] (int a_dfs_index, int b_dfs_index) {
-          return nodes.at(a_dfs_index).hi < nodes.at(b_dfs_index).hi;
+          return dfs_nodes.at(a_dfs_index).hi < dfs_nodes.at(b_dfs_index).hi;
         }
       );
       int hi2 = INT_MAX;
       if (hi2_dfsnum_it != std::end(lo_children)) {
-        hi2 = nodes.at(*hi2_dfsnum_it).hi;
+        hi2 = dfs_nodes.at(*hi2_dfsnum_it).hi;
       }
-
       // "compute bracketlist"
       // for each child c of n do
       for (int const child_dfs_index : node.children) {
         // n.blist = concat(c.blist, n.blist)
-        Node const & child = nodes.at(child_dfs_index);
+        Node const & child = dfs_nodes.at(child_dfs_index);
         node.bracket_list.concat(child.bracket_list);
       }
       // for each capping backedge d from a descendant of n to n do
@@ -583,7 +617,7 @@ namespace CycleEquivalence {
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
-        if (other->descends_from(node, nodes)) {
+        if (other->descends_from(node, dfs_nodes)) {
           // delete(n.blist, d);
           node.bracket_list.del(&capping_backedge);
         }
@@ -594,7 +628,7 @@ namespace CycleEquivalence {
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
-        if (other->descends_from(node, nodes)) {
+        if (other->descends_from(node, dfs_nodes)) {
           // delete(n.blist, b)
           node.bracket_list.del(backedge);
           // if b.class undefined then: b.class = new-class()
@@ -613,24 +647,15 @@ namespace CycleEquivalence {
         if (!other_result.first)
           assert(0 && "Edge did not have other end?");
         Node const * other = other_result.second;
-        if (node.descends_from(*other, nodes)) {
+        if (node.descends_from(*other, dfs_nodes)) {
           // push(n.blist, e)
           node.bracket_list.push(backedge);
         }
       }
 
       // if hi2 < hi0:
-      /* NOTE(jordan): Adjustment to the algorithm:
-       * -----------------------------------------------------------------
-       * If a node has no backedges, it should not be given a capping
-       * backedge. This would imply somehow that it has descendants whose
-       * backedges reach different heights in the spanning tree; in fact,
-       * it simply means that this node belongs to the special outermost
-       * cycle class, 0. It will be assigned this cycle class so long as
-       * we do not create a capping backedge for it.
-       */
       // NOTE(jordan): Only for UNSTRUCTURED loops! (untested.)
-      if ((hi2 < hi0) && (node.backedges.size() > 0)) {
+      if (hi2 < hi0) {
         assert(false && "Unstructured loops are unsupported!");
         // "create capping backedge"
         llvm::errs()
@@ -639,7 +664,7 @@ namespace CycleEquivalence {
           << "\nhi2 " << hi2 << " hi1 " << hi1 << " hi0 " << hi0
           << "\n";
         // d = (n, node[hi1])
-        auto hi1_node = nodes.at(*hi1_dfsnum_it);
+        auto hi1_node = dfs_nodes.at(*hi1_dfsnum_it);
         // FIXME(jordan): this will probably get deallocated too soon.
         capping_backedges.at(&node).push_back({ &node, &hi1_node });
         // push(n.blist, d)
@@ -651,7 +676,7 @@ namespace CycleEquivalence {
       // NOTE(jordan): the root has a parent dfs_index of -1
       if (node.parent != -1) {
         // let e be the tree edge from parent(n) to n
-        auto const & parent = nodes.at(node.parent);
+        auto const & parent = dfs_nodes.at(node.parent);
         auto & parent_edges = tree_graph.at(&parent);
         auto parent_edge_it = std::find_if(
           std::begin(parent_edges),
@@ -665,19 +690,6 @@ namespace CycleEquivalence {
           && "this node's parent has no edge to this node??"
         );
         Edge & parent_edge = **parent_edge_it;
-        /* NOTE(jordan): Adjustment to the algorithm:
-         * ---------------------------------------------------------------
-         * - treat nodes having no brackets as belonging to the special
-         *   outermost cycle class, 0. This way, the LLVM CFG does not
-         *   need to be modified to contain a single "sink" node with an
-         *   artificial back-edge to the entry node in order for the
-         *   algorithm to run.
-         */
-        if (node.bracket_list.size() == 0) {
-          // No brackets → no cycles. This node's in the outermost region.
-          parent_edge.cycle_class = 0;
-          continue;
-        }
         // b = top(n.blist)
         Edge & bracket = *node.bracket_list.top();
         // if b.recentSize != size(n.blist) then
@@ -706,7 +718,9 @@ namespace CycleEquivalence {
     return {
       /* valid              */ true,
       /* empty              */ false,
-      /* nodes              */ std::move(nodes),
+      /* start              */ std::move(&start),
+      /* exit               */ std::move(&exit),
+      /* nodes              */ std::move(dfs_nodes),
       /* edges              */ std::move(all_edges),
       /* backedges          */ std::move(all_backedges),
       /* tree_edges         */ std::move(tree_graph),
