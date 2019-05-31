@@ -66,7 +66,10 @@ namespace UndirectedCFG {
     std::vector<Node> nodes;
     for (llvm::BasicBlock const & block : function) {
       // NOTE(jordan): do not handle unreachable blocks.
-      if (llvm::pred_begin(&block) == llvm::pred_end(&block)) {
+      if (true
+        && &block != &function.getEntryBlock()
+        && llvm::pred_begin(&block) == llvm::pred_end(&block)
+      ) {
         llvm::errs() << "Unreachable block found! Aborting...\n";
         return { /* valid */ false };
       }
