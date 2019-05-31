@@ -627,6 +627,7 @@ namespace CycleEquivalence {
        */
       // NOTE(jordan): Only for UNSTRUCTURED loops! (untested.)
       if ((hi2 < hi0) && (node.backedges.size() > 0)) {
+        assert(false && "Unstructured loops are unsupported!");
         // "create capping backedge"
         llvm::errs()
           << "\"create capping backedge\""
