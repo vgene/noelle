@@ -838,6 +838,72 @@ namespace Note {
   }
 }
 
+namespace SESE {
+  struct Region {
+    /* NOTE(jordan): a Block SESE Region encloses a single BasicBlock. A
+     * Region SESE Region encloses other Regions.
+     */
+    enum class EnclosesType { Block, Region };
+    /* NOTE(jordan): a Canonical SESE Region is the largest, closest
+     * region encapsulating a set of basic blocks. Canonical Regions are
+     * derived from the CycleEquivalence::Graph.
+     *
+     * A NonCanonical SESE Region may be split out of a Canonical Region,
+     * or it may combine Canonical Regions at the same depth, to describe
+     * a program region as it relates to Canonical Regions.
+     */
+    enum class StructureType { Canonical, NonCanonical, Indeterminate };
+    int depth;
+    EnclosesType enclosesType;
+    StructureType structureType;
+    Region const * parent;
+    std::vector<Region const *> children;
+    // NOTE(jordan): only a Region of EnclosesType::Block has a block.
+    BasicBlock const * block = nullptr;
+  };
+  struct Tree {
+    int height;
+    Region const * root;
+    std::vector<Region> regions;
+    std::vector<Region const *> canonical_regions;
+    std::vector<Region const *> noncanonical_regions;
+    std::vector<Region const *> bb_regions;
+    std::map<Region const *, Note::Annotation> annotations;
+    static Tree compute (CycleEquivalence::Graph const &);
+    // NOTE(jordan): traversal methods.
+    static Region const * innermostRegionForBlock (BasicBlock const *);
+    static Region const * out (Region const &);
+    static Region const * in  (Region const &);
+    static Region const * out_canonical (Region const &);
+    static Region const * in_canonical  (Region const &);
+    // NOTE(jordan): annotation getter/setters.
+    using string = std::string;
+    static bool hasAnnotation (string, Region const *);
+    static std::string getAnnotation (string, Region const *);
+    static void upsertAnnotation (string, string, Region const *);
+  };
+
+  Region const * Tree::innermostRegionForBlock (BasicBlock const *) {
+    // TODO
+  }
+  Region const * Tree::out (Region const &) {
+    // TODO(jordan): check and return parent.
+  }
+  Region const * Tree::in  (Region const &) {
+    // TODO(jordan): choose an arbitrary (first) sibling and return it.
+  }
+  Region const * Tree::out_canonical (Region const &) {
+    // TODO(jordan): return nearest Canonical parent.
+  }
+  Region const * Tree::in_canonical  (Region const &) {
+    // TODO(jordan): recursively find 1st Canonical descendant.
+  }
+
+  Tree compute (CycleEquivalence::Graph const & graph) {
+    // TODO
+  }
+}
+
 bool llvm::TalkDown::doInitialization (Module &M) {
   return false;
 }
@@ -845,8 +911,18 @@ bool llvm::TalkDown::doInitialization (Module &M) {
 // TODO(jordan): it looks like this can be refactored as a FunctionPass
 bool llvm::TalkDown::runOnModule (Module &M) {
   /* 1. Identify annotation ranges
-   * 2. Split BasicBlocks wherever the applicable annotation changes
-   * 3. Construct SESE tree at BasicBlock granularity; write query APIs
+   * 2. Split BasicBlocks wherever the annotation changes
+   * 3. Construct SESE Tree at BasicBlock granularity; write query APIs
+   * 4. Add SESE Tree regions for annotation spans (excepting DAG cases)
+   * 5. ... Handle DAG cases? Annotation spans do not necessarily map to
+   *    SESE Regions at all. Annotations are structurally, not nominally,
+   *    unique. The same annotation can be / is shared by many Regions,
+   *    even outside of SESE Tree boundaries. e.g. an Annotation can/will
+   *    span Regions across nesting levels by a stack discipline. We
+   *    cannot reproduce these spans from the metadata emitted from the
+   *    front-end. TODO: figure out what to actually do here? We are only
+   *    able to (re)construct certain types of annotation spans. That's
+   *    annoying.
    */
 
   using SplitPoint = Instruction *;
@@ -925,9 +1001,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   // Construct SESE tree
   llvm::errs() << "\n";
   for (auto & function : M) {
-    namespace UndirectedCFG = SESE::UndirectedCFG;
-    namespace SpanningTree = SESE::SpanningTree;
-    namespace Cycle = SESE::CycleEquivalence;
+    using namespace SESE;
     auto undirected_cfg = UndirectedCFG::compute(function);
     llvm::errs() << "Undirected CFG for " << function.getName() << "\n";
     if (!undirected_cfg.valid) {
@@ -939,27 +1013,66 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     }
     llvm::errs() << "\n\n";
     llvm::errs() << "Spanning Tree for " << function.getName() << "\n";
-    SpanningTree::Tree tree = SpanningTree::compute(undirected_cfg);
-    if (!tree.valid) {
+    auto spanning_tree = SpanningTree::compute(undirected_cfg);
+    if (!spanning_tree.valid) {
       llvm::errs() << "(spanning tree is invalid)";
-    } else if (tree.empty) {
+    } else if (spanning_tree.empty) {
       llvm::errs() << "(spanning tree is empty)";
     } else {
-      SpanningTree::print(tree, llvm::errs());
+      SpanningTree::print(spanning_tree, llvm::errs());
     }
     llvm::errs() << "\n\n";
     llvm::errs() << "Cycle Equiv. for " << function.getName() << "\n";
-    Cycle::Graph graph = Cycle::Graph::compute(tree);
+    auto graph = CycleEquivalence::Graph::compute(spanning_tree);
     if (!graph.valid) {
       llvm::errs() << "(cycle equivalence graph is invalid)";
     } else if (graph.empty) {
       llvm::errs() << "(cycle equivalence graph is empty)";
     } else {
-      Cycle::Graph::print(graph, llvm::errs(), true);
+      CycleEquivalence::Graph::print(graph, llvm::errs(), true);
       /* llvm::errs() << "\n"; */
-      /* Cycle::Graph::print_brackets(graph, llvm::errs()); */
+      /* CycleEquivalence::Graph::print_brackets(graph, llvm::errs()); */
     }
     llvm::errs() << "\n\n";
+    /* TODO(jordan): using the cycle equivalence graph, compute an SESE
+     * tree for the function.
+     *
+     * Visit every node in the CycleEquivalence::Graph, preferring Edges
+     * of the highest cycle_class during traversal. This way we will start
+     * at the entry node and end at the exit node. We can group the basic
+     * blocks into SESE Regions, and nest the Regions into a Tree.
+     *
+     * 1. Construct bb_regions (Block-enclosing).
+     * 2. Construct canonical_regions (Region-enclosing).
+     * 3. Split/merge into annotation_regions (Region-enclosing).
+     */
+    // 1. Ingest every basic block into a Block-enclosing Region
+    std::vector<SESE::Region> bb_regions;
+    for (auto const & block : function) {
+      bb_regions.push_back({
+        /* depth         */ -1,
+        /* enclosesType  */ SESE::Region::EnclosesType::Block,
+        /* structureType */ SESE::Region::StructureType::Indeterminate,
+        /* parent        */ nullptr,
+        /* children      */ {},
+        /* block         */ &block,
+      });
+    }
+    // 2. Traverse CycleEquivalence::Graph to construct Canonical Regions
+    std::vector<SESE::Region> canonical_regions = {
+      /* Top Region */
+      {
+        /* depth         */ 0,
+        /* enclosesType  */
+          function.size() == 1
+          ? SESE::Region::EnclosesType::Block
+          : SESE::Region::EnclosesType::Region,
+        /* structureType */ SESE::Region::StructureType::Canonical,
+        /* parent        */ nullptr,
+      }
+    };
+    SESE::Region const & current = canonical_regions.back();
+    // TODO(jordan): like... all of it.
   }
 
   return true; // blocks are split; source is modified
