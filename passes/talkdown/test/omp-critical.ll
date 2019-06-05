@@ -51,7 +51,7 @@ entry:
   %0 = bitcast [10 x i32]* %NUMS to i8*
   call void @llvm.memset.p0i8.i64(i8* align 16 %0, i8 0, i64 40, i1 false)
   store i32 0, i32* %i, align 4
-  br label %for.cond, !note.noelle !6
+  br label %for.cond
 
 for.cond:                                         ; preds = %for.inc, %entry
   %1 = load i32, i32* %i, align 4, !note.noelle !6

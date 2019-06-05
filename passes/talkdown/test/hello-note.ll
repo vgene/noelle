@@ -15,7 +15,7 @@ entry:
   %str = alloca i8*, align 8
   store i32 0, i32* %retval, align 4
   store i32 0, i32* %i, align 4
-  br label %for.cond, !note.noelle !2
+  br label %for.cond
 
 for.cond:                                         ; preds = %for.inc, %entry
   br label %for.inc, !note.noelle !2
