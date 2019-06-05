@@ -10,8 +10,8 @@ target triple = "x86_64-unknown-linux-gnu"
 ; Function Attrs: noinline nounwind optnone uwtable
 define dso_local void @this_function_is_annotated() #0 {
 entry:
-  %x = alloca i32, align 4
-  %y = alloca i32, align 4
+  %x = alloca i32, align 4, !note.noelle !2
+  %y = alloca i32, align 4, !note.noelle !2
   store i32 0, i32* %x, align 4, !note.noelle !2
   br label %for.cond, !note.noelle !2
 
@@ -34,7 +34,7 @@ for.inc:                                          ; preds = %for.body
 for.end:                                          ; preds = %for.cond
   %call1 = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @.str.1, i32 0, i32 0)), !note.noelle !2
   store i32 0, i32* %y, align 4, !note.noelle !2
-  br label %for.cond2, !note.noelle !5
+  br label %for.cond2, !note.noelle !2
 
 for.cond2:                                        ; preds = %for.inc6, %for.end
   %3 = load i32, i32* %y, align 4, !note.noelle !5

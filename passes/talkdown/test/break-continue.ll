@@ -17,7 +17,7 @@ entry:
   %0 = load i32, i32* %argc.addr, align 4
   store i32 %0, i32* %break_stop, align 4
   store i32 0, i32* %x, align 4
-  br label %for.cond, !note.noelle !2
+  br label %for.cond
 
 for.cond:                                         ; preds = %for.inc, %entry
   %1 = load i32, i32* %x, align 4, !note.noelle !2
