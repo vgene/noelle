@@ -563,15 +563,17 @@ namespace CycleEquivalence {
     // 3.0. Allocate a capping backedges map.
     std::map<Node const *, std::vector<std::unique_ptr<Edge>>>
     capping_backedges = {};
+    for (Node const & node : dfs_nodes) {
+      // NOTE(jordan): preallocate a capping_backedges vector.
+      // NOTE(jordan): move semantics. "semantics."
+      std::vector<std::unique_ptr<Edge>> fuck_this = {};
+      capping_backedges.emplace(&node, std::move(fuck_this));
+    }
     // 3.1. Calculate cycle equivalence.
     // The Program Structure Tree. Section 3.5. Figure 4. p178
     // "for each node in reverse depth-first order"
     for (auto it = dfs_nodes.rbegin(); it != dfs_nodes.rend(); it++) {
       Node & node = *it;
-      // NOTE(jordan): preallocate a capping_backedges vector.
-      // NOTE(jordan): move semantics. "semantics."
-      std::vector<std::unique_ptr<Edge>> fuck_this = {};
-      capping_backedges.emplace(&node, std::move(fuck_this));
 
       // "compute n.hi"
       // hi0 = min({ t.dfsnum | (n, t) is a back-edge })
@@ -676,21 +678,36 @@ namespace CycleEquivalence {
 
       // if hi2 < hi0:
       if (hi2 < hi0) {
-        // "create capping backedge"
-        llvm::errs()
-          << "\"create capping backedge\""
-          << "\nhi2 " << hi2 << " hi1 " << hi1 << " hi0 " << hi0
-          << "\nNode (" << &node << " ; BB " << node.block << ")"
-          << "\nfirst instruction: " << *node.block->begin()
-          << "\n";
-        /* assert(false && "Unstructured loops are unsupported!"); */
-        // d = (n, node[hi1])
-        assert(hi1_dfsnum_it != std::end(node.children));
-        Node & hi1_node = dfs_nodes.at(*hi1_dfsnum_it);
-        std::unique_ptr<Edge> up_backedge(new Edge { &node, &hi1_node });
-        // push(n.blist, d)
-        node.bracket_list.push(up_backedge.get());
-        capping_backedges.at(&node).push_back(std::move(up_backedge));
+        Node const & hi2_node = dfs_nodes.at(hi2);
+        /* NOTE(jordan): adjustment to the algorithm:
+         * A capping backedge from n to n is trivially empty: it cannot be
+         * the bracket for any acestor edges, because it does not enclode
+         * any ancestor edges. So, do not create a capping backedge if it
+         * would immediately be removed.
+         */
+        if (&hi2_node != &node) {
+          // "create capping backedge"
+          llvm::errs()
+            << "\"create capping backedge\""
+            << "\nNode (" << &node << " ; BB " << node.block << ")"
+            << "\nfirst instruction: " << *node.block->begin()
+            << "\n";
+          // d = (n, node[hi2])
+          std::unique_ptr<Edge> up_backedge(new Edge(&node, &hi2_node));
+          // push(n.blist, d)
+          node.bracket_list.push(up_backedge.get());
+          /* NOTE(jordan): add the capping backedge to the ancestor so
+           * that it will be found and removed from its bracket-list. This
+           * is more clever than obvious, since the capping backedge does
+           * not technically belong to either node; but it can only be
+           * held by one, since it is a unique_ptr. We could perhaps
+           * change to shared_ptr, but it would not make the code
+           * meaningfully more obvious and it would be less efficient.
+           * More obvious would be to have the same pattern for capping
+           * backedges as regular backedges. Meh. TODO?
+           */
+          capping_backedges.at(&hi2_node).push_back(std::move(up_backedge));
+        }
       }
 
       // "determine class for edge from parent(n) to n
