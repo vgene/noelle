@@ -321,6 +321,7 @@ namespace SpanningTree {
         }
         backedges.push_back({ node, reached_node });
         node->backedges.push_back(reached_node);
+        reached_node->backedges.push_back(node);
       }
     }
     return std::move(backedges);
@@ -517,7 +518,16 @@ namespace CycleEquivalence {
       }
       for (auto & backedge_index : node.backedges) {
         Node const & dest = dfs_nodes.at(backedge_index);
-        all_backedges.push_back({ &node, &dest });
+        auto const existing_it = std::find_if(
+          std::begin(all_backedges),
+          std::end(all_backedges),
+          [&] (Edge const & backedge) {
+            return backedge.touches(&node) && backedge.touches(&dest);
+          }
+        );
+        if (existing_it == std::end(all_backedges)) {
+          all_backedges.push_back({ &node, &dest });
+        }
       }
       tree_map.insert({ &node, {} });
       backedge_map.insert({ &node, {} });
