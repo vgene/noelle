@@ -577,6 +577,17 @@ namespace CycleEquivalence {
 
       // "compute n.hi"
       // hi0 = min({ t.dfsnum | (n, t) is a back-edge })
+      /* // NOTE(jordan): DEBUG */
+      /* llvm::errs() << "backedges"; */
+      /* for (int backedge_dfs_index : node.backedges) { */
+      /*   Node const & other = dfs_nodes.at(backedge_dfs_index); */
+      /*   llvm::errs() */
+      /*     << "\n\t" << &other */
+      /*     << "\n\tdfsnum " << backedge_dfs_index */
+      /*     << "\n\thi " << other.hi */
+      /*     << "\n\tfirst instruction " << *other.block->begin(); */
+      /* } */
+      /* llvm::errs() << "\n"; */
       auto hi0_dfsnum_it = std::min_element(
         std::begin(node.backedges),
         std::end(node.backedges)
@@ -586,6 +597,17 @@ namespace CycleEquivalence {
         hi0 = *hi0_dfsnum_it;
       }
       // hi1 = min({ c.hi | c is a child of n })
+      /* // NOTE(jordan): DEBUG */
+      /* llvm::errs() << "children"; */
+      /* for (int child_dfs_index : node.children) { */
+      /*   Node const & child = dfs_nodes.at(child_dfs_index); */
+      /*   llvm::errs() */
+      /*     << "\n\t" << &child */
+      /*     << "\n\tdfsnum " << child_dfs_index */
+      /*     << "\n\thi " << child.hi */
+      /*     << "\n\tfirst instruction " << *child.block->begin(); */
+      /* } */
+      /* llvm::errs() << "\n"; */
       auto hi1_dfsnum_it = std::min_element(
         std::begin(node.children),
         std::end(node.children),
@@ -615,6 +637,16 @@ namespace CycleEquivalence {
       // NOTE(jordan): oh C++ std, won't you please, won't you please stay
       // NOTE(jordan): oh C++ std, won't you please just stay the saaaaame
       // NOTE(jordan): baby, never change
+      /* // NOTE(jordan): DEBUG */
+      /* llvm::errs() << "lo_children"; */
+      /* for (int lo_child_index : lo_children) { */
+      /*   Node const & lo_child = dfs_nodes.at(lo_child_index); */
+      /*   llvm::errs() */
+      /*     << "\n\t" << &lo_child */
+      /*     << "\n\thi " << lo_child.hi */
+      /*     << "\n\tfirst instruction " << *lo_child.block->begin(); */
+      /* } */
+      /* llvm::errs() << "\n"; */
       auto hi2_dfsnum_it = std::min_element(
         std::begin(lo_children),
         std::end(lo_children),
@@ -626,6 +658,12 @@ namespace CycleEquivalence {
       if (hi2_dfsnum_it != std::end(lo_children)) {
         hi2 = dfs_nodes.at(*hi2_dfsnum_it).hi;
       }
+      /* // NOTE(jordan): DEBUG */
+      /* llvm::errs() */
+      /*     << "hi2 " << hi2 */
+      /*     << " hi1 " << hi1 */
+      /*     << " hi0 " << hi0 */
+      /*     << "\n"; */
       // "compute bracketlist"
       // for each child c of n do
       for (int const child_dfs_index : node.children) {
