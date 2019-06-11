@@ -130,7 +130,7 @@ namespace SpanningTree {
     Node const * parent;
     std::vector<Node const *> children;
     std::vector<Node const *> backedges;
-    std::vector<BasicBlock const *> bb_unused_children;
+    std::vector<UndirectedCFG::Edge const *> cfg_backedges;
   };
   using Backedge = SESE::AbstractEdge<Node>;
   struct Tree {
@@ -239,7 +239,7 @@ namespace SpanningTree {
     // Visit this node (to prevent next nodes from looping back to it)
     bb_visited.push_back(node->block);
     // Reach not-yet-visited children, add back-edges for visited children
-    for (auto edge : graph.edges) {
+    for (auto & edge : graph.edges) {
       if (!edge.touches(&start)) {
         // This edge is not one of ours
         continue;
@@ -253,7 +253,7 @@ namespace SpanningTree {
         next->block
       );
       if (visited_next != bb_visited.end()) {
-        node->bb_unused_children.push_back(next->block);
+        node->cfg_backedges.push_back(&edge);
       } else {
         node->children.push_back(
           SpanningTree::compute_recursive(
@@ -273,11 +273,17 @@ namespace SpanningTree {
     std::vector<Node *> const & nodes
   ) {
     std::vector<Backedge> backedges = {};
-    for (auto & node : nodes) {
-      for (auto & bb_backedge : node->bb_unused_children) {
+    for (Node * node : nodes) {
+      for (UndirectedCFG::Edge const * bb_backedge : node->cfg_backedges) {
+        BasicBlock const * seek_bb = nullptr;
+        if (bb_backedge->first->block == node->block) {
+          seek_bb = bb_backedge->second->block;
+        } else {
+          seek_bb = bb_backedge->first->block;
+        }
         Node * reached_node = nullptr;
         for (auto & seek_node : nodes) {
-          if (seek_node->block == bb_backedge) {
+          if (seek_node->block == seek_bb) {
             reached_node = seek_node;
           }
         }
@@ -319,7 +325,11 @@ namespace SpanningTree {
           // backedge has already been found
           continue;
         }
-        backedges.push_back({ node, reached_node });
+        if (bb_backedge->first->block == node->block) {
+          backedges.push_back({ node, reached_node });
+        } else {
+          backedges.push_back({ reached_node, node });
+        }
         node->backedges.push_back(reached_node);
         reached_node->backedges.push_back(node);
       }
@@ -456,15 +466,8 @@ namespace CycleEquivalence {
    * but we do not test or strictly intend to support unstructured loops.
    *
    * FIXME(jordan): The below code should be adapted to abort in the
-   * presence of an unstructured loop. Possibly: abort in any case where a
-   * capping back-edge would otherwise be created. More test cases should
-   * be added before it is decided that this is a safe choice.
-   *
-   * NOTE(jordan):
-   * Adaptations made from the paper: rather than construct an artificial
-   * start (source) and end (sink) node with an all-enclosing false
-   * back-edge, we simply treat any node with 0 brackets as a "top-most"
-   * node whose cycle class defaults to the special top-most class of 0.
+   * presence of an unstructured loop. It's not immediately obvious how to
+   * detect this, however.
    */
   Graph Graph::compute (SpanningTree::Tree const & tree) {
     if (!tree.valid) {
@@ -516,21 +519,13 @@ namespace CycleEquivalence {
         Node const & child = dfs_nodes.at(child_index);
         all_edges.push_back({ &node, &child });
       }
-      for (auto & backedge_index : node.backedges) {
-        Node const & dest = dfs_nodes.at(backedge_index);
-        auto const existing_it = std::find_if(
-          std::begin(all_backedges),
-          std::end(all_backedges),
-          [&] (Edge const & backedge) {
-            return backedge.touches(&node) && backedge.touches(&dest);
-          }
-        );
-        if (existing_it == std::end(all_backedges)) {
-          all_backedges.push_back({ &node, &dest });
-        }
-      }
       tree_map.insert({ &node, {} });
       backedge_map.insert({ &node, {} });
+    }
+    for (auto & backedge : tree.backedges) {
+      Node const & node = dfs_nodes.at(backedge.first->dfs_index);
+      Node const & dest = dfs_nodes.at(backedge.second->dfs_index);
+      all_backedges.push_back({ &node, &dest });
     }
     // 2.b. Add the artificial back-edge from the exit to the start node
     // NOTE(jordan): assumes function.begin() is the entry node
@@ -543,9 +538,9 @@ namespace CycleEquivalence {
     }
     assert(exit_node_dfs_index != -1);
     Node & exit = dfs_nodes.at(exit_node_dfs_index);
-    all_backedges.push_back({ &start, &exit });
-    start.backedges.push_back(exit.dfs_index);
-    if (&start != &exit) exit.backedges.push_back(start.dfs_index);
+    all_backedges.push_back({ &exit, &start });
+    exit.backedges.push_back(start.dfs_index);
+    if (&start != &exit) start.backedges.push_back(exit.dfs_index);
     // 2.c. Compute the graph of forward-edges.
     for (auto & edge : all_edges) {
       Node const & node = *edge.first;
@@ -825,31 +820,25 @@ namespace CycleEquivalence {
         Node const * other = other_result.second;
         os
           << "\n\tEdge (" << edge << ")"
-          << ": " << edge->first << " → " << edge->second
+          << " " << edge->first << " → " << edge->second
           << "\n\tclass: " << edge->cycle_class;
       }
       if (print_backedges) {
         os << "\nBackedges:";
         for (Edge const * backedge : graph.backedge_map.at(&node)) {
-          auto other_result = backedge->other_end(&node);
-          if (!other_result.first)
-            assert(0 && "Backedge did not have other end?");
-          Node const * other = other_result.second;
           int print_class = backedge->cycle_class;
           os
-            << "\n\tBackedge (" << backedge << ") → " << other
+            << "\n\tBackedge (" << backedge << ")"
+            << " " << backedge->first << " → " << backedge->second
             << "\n\tclass: " << print_class;
         }
         os << "\nCapping Backedges:";
         for (auto const & up_cap : graph.capping_backedges.at(&node)) {
           Edge const & backedge = *up_cap;
-          auto other_result = backedge.other_end(&node);
-          if (!other_result.first)
-            assert(0 && "Capping backedge did not have other end?");
-          Node const * other = other_result.second;
           // NOTE(jordan): a capping backedge is fake and has no class
           os
-            << "\n\tCapping Backedge (" << &backedge << ") → " << other;
+            << "\n\tCapping Backedge (" << &backedge << ")"
+            << " " << backedge.first << " → " << backedge.second;
         }
       }
     }
@@ -936,6 +925,12 @@ namespace Note {
 }
 
 namespace SESE {
+  using Node = CycleEquivalence::Node;
+  using Edge = CycleEquivalence::Edge;
+  struct RegionBoundary {
+    Edge const * start;
+    Edge const * end;
+  };
   struct Region {
     /* NOTE(jordan): a Block SESE Region encloses a single BasicBlock. A
      * Region SESE Region encloses other Regions.
@@ -953,7 +948,10 @@ namespace SESE {
     int depth;
     EnclosesType enclosesType;
     StructureType structureType;
-    Region const * parent;
+    Region * parent;
+    // NOTE(jordan): only non-root regions have start & end Edges
+    Edge const * start;
+    Edge const * end;
     std::vector<Region const *> children;
     // NOTE(jordan): only a Region of EnclosesType::Block has a block.
     BasicBlock const * block = nullptr;
@@ -1000,13 +998,6 @@ namespace SESE {
     // TODO
   }
 
-  using Node = CycleEquivalence::Node;
-  using Edge = CycleEquivalence::Edge;
-  struct RegionBoundary {
-    Edge const * start;
-    Edge const * end;
-  };
-
   void find_region_boundaries_recursive (
     Node const & node,
     std::map<Edge const *, bool> & visited_edges,
@@ -1019,13 +1010,16 @@ namespace SESE {
     std::vector<Edge const *> next_edges = {};
     for (Edge const * candidate_ptr : sorted_edges) {
       Edge const & candidate = *candidate_ptr;
-      if (candidate.touches(&node) && !visited_edges.at(&candidate)) {
+      if (candidate.first == &node) {
         next_edges.push_back(&candidate);
       }
     }
     // Traverse all of the unvisited next edges in cycle_class order
     for (Edge const * next_edge_ptr : next_edges) {
       Edge const & next_edge = *next_edge_ptr;
+      if (visited_edges.at(&next_edge)) {
+        continue;
+      }
       // Mark the edge visited
       visited_edges.at(&next_edge) = true;
       // Check if the edge closes a region
@@ -1068,7 +1062,7 @@ namespace SESE {
   ) {
     if (graph.empty) return {};
     Node const & start = *graph.start;
-    std::vector<Edge const *> edges;
+    std::vector<Edge const *> edges = {};
     CycleEquivalence::sorting_append(graph.edges, edges);
     CycleEquivalence::sorting_append(graph.backedges, edges);
     // Initialize visited_edges to all false
@@ -1099,70 +1093,149 @@ namespace SESE {
     return std::move(boundaries);
   }
 
-  /* void reify_regions_recursive ( */
-  /*   Node const & node, */
-  /*   Region const & parent_region, */
-  /*   std::map<Edge const *, bool> & visited_edges, */
-  /*   std::map<Node const *, bool> & visited_nodes, */
-  /*   std::vector<Edge const *> const & sorted_edges, */
-  /*   std::vector<RegionBoundary> & boundaries */
-  /* ) { */
-  /*   // Find the unvisted edges at this node in cycle_class order */
-  /*   std::vector<Edge const *> next_edges = {}; */
-  /*   for (Edge const * candidate_ptr : sorted_edges) { */
-  /*     Edge const & candidate = *candidate_ptr; */
-  /*     if (candidate.touches(&node) && !visited_edges.at(&candidate)) { */
-  /*       next_edges.push_back(&candidate); */
-  /*     } */
-  /*   } */
-  /*   // Traverse all of the unvisited next edges in cycle_class order */
-  /*   for (Edge const * next_edge_ptr : next_edges) { */
-  /*     Edge const & next_edge = *next_edge_ptr; */
-  /*     // Mark the edge visited */
-  /*     visited_edges.at(&next_edge) = true; */
-  /*     // Check if the edge closes a region */
-  /*     if (region_starts.at(next_edge.cycle_class) != nullptr) { */
-  /*       Edge const * start_ptr = region_starts.at(next_edge.cycle_class); */
-  /*       boundaries.push_back({ start_ptr, &next_edge }); */
-  /*     } */
-  /*     // Find the other end of the Edge */
-  /*     auto other_end_result = next_edge.other_end(&node); */
-  /*     assert(other_end_result.first && "Edge does not have other end?"); */
-  /*     Node const * other_end = other_end_result.second; */
-  /*     // If the other end has been visited, skip it */
-  /*     if (visited_nodes.at(other_end)) { */
-  /*       continue; */
-  /*     } */
-  /*     // If the other end has NOT been visited: */
-  /*     // 1. Mark it visited */
-  /*     visited_nodes.at(other_end) = true; */
-  /*     // 2. Start a new region from this edge */
-  /*     auto region_starts_copy = region_starts; */
-  /*     region_starts_copy.at(next_edge.cycle_class) = &next_edge; */
-  /*     // 3. Recur */
-  /*     find_region_boundaries_recursive( */
-  /*       *other_end, */
-  /*       visited_edges, */
-  /*       visited_nodes, */
-  /*       sorted_edges, */
-  /*       std::move(region_starts_copy), */
-  /*       boundaries */
-  /*     ); */
-  /*   } */
-  /* } */
+  void reify_regions_recursive (
+    Node const & node,
+    Region * parent_region,
+    std::map<Edge const *, bool> & visited_edges,
+    std::map<Node const *, bool> & visited_nodes,
+    std::vector<Edge const *> const & edges,
+    std::vector<RegionBoundary> & boundaries,
+    std::vector<Region> & regions
+  ) {
+    // Find the unvisted edges at this node
+    std::vector<Edge const *> next_edges = {};
+    for (Edge const * candidate_ptr : edges) {
+      Edge const & candidate = *candidate_ptr;
+      if (candidate.first == &node) {
+        next_edges.push_back(&candidate);
+      }
+    }
+    // Traverse all of the unvisited next edges
+    for (Edge const * next_edge_ptr : next_edges) {
+      Region * edge_parent = parent_region;
+      Edge const & next_edge = *next_edge_ptr;
+      if (visited_edges.at(&next_edge)) {
+        continue;
+      }
+      // Mark the edge visited
+      llvm::errs() << "visiting edge " << &next_edge << "\n";
+      visited_edges.at(&next_edge) = true;
+      // Check if the edge closes a region
+      auto closed_it = std::find_if(
+        std::begin(boundaries),
+        std::end(boundaries),
+        [&] (RegionBoundary const & boundary) {
+          return boundary.end == &next_edge;
+        }
+      );
+      // If the edge closes a region, move up a parent
+      if (closed_it != std::end(boundaries)) {
+        assert(parent_region->parent != nullptr);
+        edge_parent = parent_region->parent;
+        llvm::errs()
+          << "Closing region (" << parent_region << ")"
+          << " depth " << parent_region->depth
+          << "\n  returning to (" << edge_parent << ")"
+          << " depth " << edge_parent->depth
+          << "\n";
+      }
+      // Find the other end of the Edge
+      auto other_end_result = next_edge.other_end(&node);
+      assert(other_end_result.first && "Edge does not have other end?");
+      Node const * other_end = other_end_result.second;
+      // If the other end has been visited, skip it
+      if (visited_nodes.at(other_end)) {
+        continue;
+      }
+      // If the other end has NOT been visited:
+      // Check if the edge opens a region
+      auto opened_it = std::find_if(
+        std::begin(boundaries),
+        std::end(boundaries),
+        [&] (RegionBoundary const & boundary) {
+          return boundary.start == &next_edge;
+        }
+      );
+      // If the edge opens a region, construct it & set it to parent
+      if (opened_it != std::end(boundaries)) {
+        RegionBoundary & boundary = *opened_it;
+        regions.push_back({
+          /* depth         */ edge_parent->depth + 1,
+          /* enclosesType  */ SESE::Region::EnclosesType::Region,
+          /* structureType */ SESE::Region::StructureType::Canonical,
+          /* parent        */ edge_parent,
+          /* start         */ boundary.start,
+          /* end           */ boundary.end,
+          /* children      */ {},
+        });
+        Region & opened_region = regions.back();
+        llvm::errs()
+          << "Opening region (" << &opened_region << ")"
+          << " depth " << opened_region.depth
+          << "\n  from parent (" << edge_parent << ")"
+          << " depth " << edge_parent->depth
+          << "\n";
+        edge_parent->children.push_back(&opened_region);
+        edge_parent = &opened_region;
+      }
+      // 1. Mark it visited
+      visited_nodes.at(other_end) = true;
+      // 2. Recur
+      reify_regions_recursive(
+        *other_end,
+        edge_parent,
+        visited_edges,
+        visited_nodes,
+        edges,
+        boundaries,
+        regions
+      );
+    }
+  }
 
-  SESE::Region reify_regions (
+  std::pair<SESE::Region *, std::vector<Region>> reify_regions (
     std::vector<RegionBoundary> boundaries,
     CycleEquivalence::Graph const & graph
   ) {
-    SESE::Region root_region = {
+    if (graph.empty) return {};
+    Node const & start = *graph.start;
+    std::vector<Edge const *> edges = {};
+    CycleEquivalence::sorting_append(graph.edges, edges);
+    CycleEquivalence::sorting_append(graph.backedges, edges);
+    std::map<Edge const *, bool> visited_edges = {};
+    for (Edge const * edge : edges) {
+      visited_edges.insert({ edge, false });
+    }
+    std::map<Node const *, bool> visited_nodes = {};
+    for (Node const & node : graph.nodes) {
+      visited_nodes.insert({ &node, false });
+    }
+    visited_nodes.at(&start) = true;
+    std::vector<Region> regions = {};
+    regions.reserve(boundaries.size() + 1);
+    regions.push_back({
       /* depth         */ 0,
       /* enclosesType  */ SESE::Region::EnclosesType::Region,
       /* structureType */ SESE::Region::StructureType::Canonical,
       /* parent        */ nullptr,
+      /* start         */ nullptr,
+      /* end           */ nullptr,
       /* children      */ {},
+    });
+    SESE::Region & root_region = regions.back();
+    reify_regions_recursive(
+      start,
+      &root_region,
+      visited_edges,
+      visited_nodes,
+      edges,
+      boundaries,
+      regions
+    );
+    return {
+      &root_region,
+      std::move(regions),
     };
-    TODO: return std::move(root_region);
   }
 }
 
@@ -1310,10 +1383,20 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     // 2. Traverse CycleEquivalence::Graph to construct Block Regions
     auto region_boundaries = SESE::find_region_boundaries(graph);
     // 3. Traverse CycleEquivalence::Graph and reify Canonical Regions
-    auto regions = SESE::reify_regions(region_boundaries, graph);
+    auto reified = SESE::reify_regions(region_boundaries, graph);
+    SESE::Region * root_ptr       = reified.first;
+    std::vector<Region> & regions = reified.second;
     for (auto const & bound : region_boundaries) {
       llvm::errs()
         << "Boundary: " << bound.start << " | " << bound.end << "\n";
+    }
+    for (auto const & region : regions) {
+      llvm::errs()
+        << "\nRegion (" << &region << ")"
+        << "\n  depth  " << region.depth
+        << "\n  parent " << region.parent
+        << "\n  start  " << region.start
+        << "\n  end    " << region.end;
     }
     llvm::errs() << "\n";
   }
