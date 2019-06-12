@@ -50,7 +50,7 @@ template <typename NodeTy>
 namespace SESE {
 namespace UndirectedCFG {
   struct Node {
-    BasicBlock const * block;
+    BasicBlock * block;
   };
   using Edge = SESE::AbstractEdge<Node>;
   struct Graph {
@@ -61,12 +61,12 @@ namespace UndirectedCFG {
     std::vector<Edge> const edges;
   };
 
-  Graph compute (llvm::Function const & function) {
+  Graph compute (llvm::Function & function) {
     if (std::begin(function) == std::end(function)) {
       return { /* valid */ true, /* empty */ true };
     }
     std::vector<Node> nodes;
-    for (llvm::BasicBlock const & block : function) {
+    for (llvm::BasicBlock & block : function) {
       // NOTE(jordan): do not handle unreachable blocks.
       if (true
         && &block != &function.getEntryBlock()
@@ -122,11 +122,11 @@ namespace UndirectedCFG {
 namespace SESE {
 namespace SpanningTree {
   struct Node {
-    Node (int dfs_index, BasicBlock const * block, Node const * parent)
+    Node (int dfs_index, BasicBlock * block, Node const * parent)
       : dfs_index(dfs_index), block(block), parent(parent)
       {}
     int dfs_index; // index in tree (simplifies cycle equiv.)
-    BasicBlock const * block;
+    BasicBlock * block;
     Node const * parent;
     std::vector<Node const *> children;
     std::vector<Node const *> backedges;
@@ -400,7 +400,7 @@ namespace CycleEquivalence {
     std::vector<int> children;  // referenced by dfs-index
     std::vector<int> backedges; // referenced by dfs-index
     int parent;
-    BasicBlock const * block;
+    BasicBlock * block;
     bool descends_from (Node const &, std::vector<Node> const &) const;
   };
   struct Graph {
@@ -897,7 +897,7 @@ namespace CycleEquivalence {
  * reasonably be copied into this one for easy reference.
  */
 namespace Note {
-  using Annotation = TalkDown::Annotation;
+  using Annotation = std::map<std::string, std::string>;
   Annotation parse_metadata (MDNode * md) {
     // NOTE(jordan): MDNode is a tuple of MDString, MDString pairs
     // NOTE(jordan): Use mdconst::dyn_extract API from Metadata.h#483
@@ -944,58 +944,82 @@ namespace SESE {
      * or it may combine Canonical Regions at the same depth, to describe
      * a program region as it relates to Canonical Regions.
      */
-    enum class StructureType { Canonical, NonCanonical, Indeterminate };
-    int depth;
+    enum class StructureType { Canonical, NonCanonical };
+    int depth = -1;
     EnclosesType enclosesType;
     StructureType structureType;
-    Region * parent;
-    // NOTE(jordan): only non-root regions have start & end Edges
-    Edge const * start;
-    Edge const * end;
-    std::vector<Region const *> children;
+    Region * parent = nullptr;
+    // NOTE(jordan): only non-root Regions have start & end Edges
+    Edge const * start = nullptr;
+    Edge const * end   = nullptr;
+    // NOTE(jordan): only a Region of EnclosesType::Region has children.
+    std::vector<Region *> children = {};
     // NOTE(jordan): only a Region of EnclosesType::Block has a block.
-    BasicBlock const * block = nullptr;
+    BasicBlock * block = nullptr;
+    // NOTE(jordan): every Region has a (possibly empty) annotation.
+    Note::Annotation annotation = {};
   };
   struct Tree {
-    int height;
+    bool valid;
+    bool empty;
     Region const * root;
     std::vector<Region> regions;
-    std::vector<Region const *> canonical_regions;
-    std::vector<Region const *> noncanonical_regions;
-    std::vector<Region const *> bb_regions;
     std::map<Region const *, Note::Annotation> annotations;
     static Tree compute (CycleEquivalence::Graph const &);
     // NOTE(jordan): traversal methods.
-    static Region const * innermostRegionForBlock (BasicBlock const *);
-    static Region const * out (Region const &);
-    static Region const * in  (Region const &);
-    static Region const * out_canonical (Region const &);
-    static Region const * in_canonical  (Region const &);
+    Region * innermostRegionForBlock (BasicBlock const *);
+    Region * out (Region const &);
+    Region * in  (Region const &);
+    Region * out_canonical (Region const &);
+    Region * in_canonical  (Region const &);
     // NOTE(jordan): annotation getter/setters.
     using string = std::string;
-    static bool hasAnnotation (string, Region const *);
-    static std::string getAnnotation (string, Region const *);
-    static void upsertAnnotation (string, string, Region const *);
+    bool hasAnnotation (string, Region const *);
+    std::string getAnnotation (string, Region const *);
+    void upsertAnnotation (string, string, Region const *);
   };
 
-  Region const * Tree::innermostRegionForBlock (BasicBlock const *) {
-    // TODO
+  // NOTE(jordan): because there are regions for every block, this works.
+  Region * Tree::innermostRegionForBlock (BasicBlock const * block) {
+    for (auto & region : regions) {
+      if (region.enclosesType == SESE::Region::EnclosesType::Block) {
+        if (region.block == block) {
+          return &region;
+        }
+      }
+    }
+    return nullptr;
   }
-  Region const * Tree::out (Region const &) {
-    // TODO(jordan): check and return parent.
+  Region * Tree::out (Region const & current) {
+    assert(current.parent != nullptr);
+    return current.parent;
   }
-  Region const * Tree::in  (Region const &) {
-    // TODO(jordan): choose an arbitrary (first) sibling and return it.
+  Region * Tree::in  (Region const & current) {
+    if (current.children.size() == 0) {
+      return nullptr;
+    }
+    return current.children.at(0);
   }
-  Region const * Tree::out_canonical (Region const &) {
-    // TODO(jordan): return nearest Canonical parent.
+  Region * Tree::out_canonical (Region const & current) {
+    assert(current.parent != nullptr);
+    Region * outer = current.parent;
+    while (outer->structureType != SESE::Region::StructureType::Canonical) {
+      assert(outer->parent != nullptr);
+      outer = outer->parent;
+    }
+    return outer;
   }
-  Region const * Tree::in_canonical  (Region const &) {
-    // TODO(jordan): recursively find 1st Canonical descendant.
-  }
-
-  Tree compute (CycleEquivalence::Graph const & graph) {
-    // TODO
+  Region * Tree::in_canonical  (Region const & current) {
+    if (current.children.size() == 0) {
+      return nullptr;
+    }
+    for (Region * child : current.children) {
+      if (child->structureType == SESE::Region::StructureType::Canonical) {
+        return child;
+      } else {
+        return in_canonical(*child);
+      }
+    }
   }
 
   void find_region_boundaries_recursive (
@@ -1102,21 +1126,23 @@ namespace SESE {
     std::vector<RegionBoundary> & boundaries,
     std::vector<Region> & regions
   ) {
-    // Find the unvisted edges at this node
-    std::vector<Edge const *> next_edges = {};
+    std::vector<Edge const *> node_edges = {};
     for (Edge const * candidate_ptr : edges) {
       Edge const & candidate = *candidate_ptr;
-      if (candidate.first == &node) {
-        next_edges.push_back(&candidate);
+      if (candidate.touches(&node)) {
+        node_edges.push_back(&candidate);
       }
     }
-    // Traverse all of the unvisited next edges
-    for (Edge const * next_edge_ptr : next_edges) {
-      Region * edge_parent = parent_region;
+    for (Edge const * next_edge_ptr : node_edges) {
       Edge const & next_edge = *next_edge_ptr;
+      // Skip in-edges and visited edges (we'll get to the in-edges later)
+      if (next_edge.first != &node) {
+        continue;
+      }
       if (visited_edges.at(&next_edge)) {
         continue;
       }
+      Region * edge_parent = parent_region;
       // Mark the edge visited
       llvm::errs() << "visiting edge " << &next_edge << "\n";
       visited_edges.at(&next_edge) = true;
@@ -1132,8 +1158,21 @@ namespace SESE {
       if (closed_it != std::end(boundaries)) {
         assert(parent_region->parent != nullptr);
         edge_parent = parent_region->parent;
+        RegionBoundary & closed = *closed_it;
+        /* If the closed boundary edges are the only edges, change the
+         * parent (the region we are closing) to a block-enclosing region.
+         */
+        bool was_block_region = true
+          && (node_edges.size() == 2)
+          && (closed.start->second == closed.end->first)
+          ;
+        if (was_block_region) {
+          parent_region->enclosesType = SESE::Region::EnclosesType::Block;
+          parent_region->block = node.block;
+        }
         llvm::errs()
-          << "Closing region (" << parent_region << ")"
+          << "Closing" << (was_block_region ? " BLOCK " : " ")
+          << "region (" << parent_region << ")"
           << " depth " << parent_region->depth
           << "\n  returning to (" << edge_parent << ")"
           << " depth " << edge_parent->depth
@@ -1178,9 +1217,7 @@ namespace SESE {
         edge_parent->children.push_back(&opened_region);
         edge_parent = &opened_region;
       }
-      // 1. Mark it visited
       visited_nodes.at(other_end) = true;
-      // 2. Recur
       reify_regions_recursive(
         *other_end,
         edge_parent,
@@ -1190,6 +1227,21 @@ namespace SESE {
         boundaries,
         regions
       );
+    }
+    /* Create a non-canonical block-region for this node if we have not
+     * created a region for it yet.
+     */
+    if (!(parent_region->enclosesType == SESE::Region::EnclosesType::Block)) {
+      regions.push_back({
+        /* depth         */ parent_region->depth + 1,
+        /* enclosesType  */ SESE::Region::EnclosesType::Block,
+        /* structureType */ SESE::Region::StructureType::NonCanonical,
+        /* parent        */ parent_region,
+        /* start         */ nullptr,
+        /* end           */ nullptr,
+        /* children      */ {},
+        /* block         */ node.block,
+      });
     }
   }
 
@@ -1212,7 +1264,7 @@ namespace SESE {
     }
     visited_nodes.at(&start) = true;
     std::vector<Region> regions = {};
-    regions.reserve(boundaries.size() + 1);
+    regions.reserve(boundaries.size() + graph.nodes.size() + 1);
     regions.push_back({
       /* depth         */ 0,
       /* enclosesType  */ SESE::Region::EnclosesType::Region,
@@ -1235,6 +1287,22 @@ namespace SESE {
     return {
       &root_region,
       std::move(regions),
+    };
+  }
+
+  Tree Tree::compute (CycleEquivalence::Graph const & graph) {
+    if (!graph.valid) return { /* valid */ false };
+    if (graph.empty)  return { /* valid */ true, /* empty */ true };
+    // Find boundaries and then construct regions
+    auto region_boundaries = SESE::find_region_boundaries(graph);
+    auto reify_result = SESE::reify_regions(region_boundaries, graph);
+    Region const * root = reify_result.first;
+    std::vector<Region> & regions = reify_result.second;
+    return {
+      /* valid   */ true,
+      /* empty   */ false,
+      /* root    */ root,
+      /* regions */ std::move(regions),
     };
   }
 }
@@ -1309,28 +1377,26 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   llvm::errs() << "\nSplit points constructed: " << splits.size() << "\n";
 
   // Perform splitting
-  /* for (SplitPoint & split : splits) { */
-  /*   llvm::errs() */
-  /*     << "Split:" */
-  /*     << "\n\tin block @ " << split->getParent() */
-  /*     << "\n\tbefore instruction @ " << split */
-  /*     << "\n\t" << *split */
-  /*     << "\n"; */
-
-  /*   // NOTE(jordan): DEBUG */
-  /*   /1* BasicBlock::iterator I (split); *1/ */
-  /*   /1* Instruction * previous = &*--I; *1/ */
-  /*   /1* if (previous->hasMetadata()) { *1/ */
-  /*   /1*   MDNode * noelle_meta = previous->getMetadata("note.noelle"); *1/ */
-  /*   /1*   llvm::errs() << previous << " has Noelle annotation:\n"; *1/ */
-  /*   /1*   Annotation note = Note::parse_metadata(noelle_meta); *1/ */
-  /*   /1*   Note::print_annotation(note, llvm::errs()); *1/ */
-  /*   /1* } *1/ */
-
-  /*   // NOTE(jordan): using SplitBlock is recommended in the docs */
-  /*   llvm::SplitBlock(split->getParent(), split); */
-  /* } */
-  /* llvm::errs() << "Splits made.\n"; */
+  for (SplitPoint & split : splits) {
+    llvm::errs()
+      << "Split:"
+      << "\n\tin block @ " << split->getParent()
+      << "\n\tbefore instruction @ " << split
+      << "\n\t" << *split
+      << "\n";
+    // NOTE(jordan): DEBUG
+    /* BasicBlock::iterator I (split); */
+    /* Instruction * previous = &*--I; */
+    /* if (previous->hasMetadata()) { */
+    /*   MDNode * noelle_meta = previous->getMetadata("note.noelle"); */
+    /*   llvm::errs() << previous << " has Noelle annotation:\n"; */
+    /*   Annotation note = Note::parse_metadata(noelle_meta); */
+    /*   Note::print_annotation(note, llvm::errs()); */
+    /* } */
+    // NOTE(jordan): using SplitBlock is recommended in the docs
+    llvm::SplitBlock(split->getParent(), split);
+  }
+  llvm::errs() << "Splits made.\n";
 
   // Construct SESE tree
   llvm::errs() << "\n";
@@ -1368,36 +1434,47 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       /* CycleEquivalence::Graph::print_brackets(graph, llvm::errs()); */
     }
     llvm::errs() << "\n\n";
-    /* TODO(jordan): using the cycle equivalence graph, compute an SESE
-     * tree for the function.
-     *
-     * Visit every node in the CycleEquivalence::Graph, preferring Edges
-     * of the highest cycle_class during traversal. This way we will start
-     * at the entry node and end at the exit node. We can group the basic
-     * blocks into SESE Regions, and nest the Regions into a Tree.
-     *
-     * 1. Construct bb_regions (Block-enclosing).
-     * 2. Construct canonical_regions (Region-enclosing).
-     * 3. Split/merge into annotation_regions (Region-enclosing).
-     */
-    // 2. Traverse CycleEquivalence::Graph to construct Block Regions
-    auto region_boundaries = SESE::find_region_boundaries(graph);
-    // 3. Traverse CycleEquivalence::Graph and reify Canonical Regions
-    auto reified = SESE::reify_regions(region_boundaries, graph);
-    SESE::Region * root_ptr       = reified.first;
-    std::vector<Region> & regions = reified.second;
-    for (auto const & bound : region_boundaries) {
-      llvm::errs()
-        << "Boundary: " << bound.start << " | " << bound.end << "\n";
+    llvm::errs() << "SESE Tree for " << function.getName() << "\n";
+    SESE::Tree sese_tree = SESE::Tree::compute(graph);
+    SESE::Region const * root_ptr = sese_tree.root;
+    std::vector<Region> & regions = sese_tree.regions;
+    for (auto & block : function) {
+      auto & first_inst = block.front();
+      MDNode * note_meta = first_inst.getMetadata("note.noelle");
+      Region * region = sese_tree.innermostRegionForBlock(&block);
+      Annotation note = {};
+      if (note_meta != nullptr) {
+        note = Note::parse_metadata(note_meta);
+      }
+      assert(region != nullptr);
+      region->annotation = note;
+      sese_tree.annotations.insert({ region, note });
     }
-    for (auto const & region : regions) {
-      llvm::errs()
-        << "\nRegion (" << &region << ")"
-        << "\n  depth  " << region.depth
-        << "\n  parent " << region.parent
-        << "\n  start  " << region.start
-        << "\n  end    " << region.end;
+    if (!sese_tree.valid) {
+      llvm::errs() << "(sese tree is invalid)";
+    } else if (sese_tree.empty) {
+      llvm::errs() << "(sese tree is empty)";
+    } else {
+      for (auto const & region : regions) {
+        bool canonical = (region.structureType == SESE::Region::StructureType::Canonical);
+        bool block_size = (region.enclosesType == SESE::Region::EnclosesType::Block);
+        llvm::errs()
+          << "\nRegion (" << &region << ")"
+          << (canonical  ? " CANONICAL" : "")
+          << (block_size ? " BLOCK"     : "")
+          << "\n  depth  " << region.depth
+          << "\n  parent " << region.parent
+          << "\n  start  " << region.start
+          << "\n  end    " << region.end
+          << "\n  block  " << region.block;
+        llvm::errs() << "\n";
+        Annotation const & note = region.annotation;
+        Note::print_annotation(note, llvm::errs());
+      }
     }
+    // TODO(jordan): coalescing
+    // Sort regions by depth in ascending order (deepest-first)
+    // Propagate annotations to parents that are shared by all children
     llvm::errs() << "\n";
   }
 
@@ -1405,14 +1482,8 @@ bool llvm::TalkDown::runOnModule (Module &M) {
 }
 
 void llvm::TalkDown::getAnalysisUsage (AnalysisUsage &AU) const {
-  /* NOTE(jordan): I'm pretty sure this analysis is non-preserving of
-   * other analyses. Control flow changes, for example, when basic blocks
-   * are split. It would be difficult to not do this, but possible.
-   */
-  /* AU.setPreservesAll(); */
-  // NOTE(jordan): ensures a single exit node for each IR function.
   AU.addRequired<UnifyFunctionExitNodes>();
-  return ;
+  return;
 }
 
 // Register pass with LLVM
