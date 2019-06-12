@@ -27,6 +27,7 @@
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 
 namespace SESE {
+// Abstract Edge type
 template <typename NodeTy>
   struct AbstractEdge : std::pair<NodeTy const *, NodeTy const *> {
     AbstractEdge (NodeTy const * a, NodeTy const * b)
@@ -1317,15 +1318,6 @@ bool llvm::TalkDown::runOnModule (Module &M) {
    * 2. Split BasicBlocks wherever the annotation changes
    * 3. Construct SESE Tree at BasicBlock granularity; write query APIs
    * 4. Add SESE Tree regions for annotation spans (excepting DAG cases)
-   * 5. ... Handle DAG cases? Annotation spans do not necessarily map to
-   *    SESE Regions at all. Annotations are structurally, not nominally,
-   *    unique. The same annotation can be / is shared by many Regions,
-   *    even outside of SESE Tree boundaries. e.g. an Annotation can/will
-   *    span Regions across nesting levels by a stack discipline. We
-   *    cannot reproduce these spans from the metadata emitted from the
-   *    front-end. TODO: figure out what to actually do here? We are only
-   *    able to (re)construct certain types of annotation spans. That's
-   *    annoying.
    */
 
   using SplitPoint = Instruction *;
@@ -1402,6 +1394,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   llvm::errs() << "\n";
   for (auto & function : M) {
     using namespace SESE;
+
     auto undirected_cfg = UndirectedCFG::compute(function);
     llvm::errs() << "Undirected CFG for " << function.getName() << "\n";
     if (!undirected_cfg.valid) {
@@ -1412,8 +1405,9 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       UndirectedCFG::print(undirected_cfg, llvm::errs());
     }
     llvm::errs() << "\n\n";
-    llvm::errs() << "Spanning Tree for " << function.getName() << "\n";
+
     auto spanning_tree = SpanningTree::compute(undirected_cfg);
+    llvm::errs() << "Spanning Tree for " << function.getName() << "\n";
     if (!spanning_tree.valid) {
       llvm::errs() << "(spanning tree is invalid)";
     } else if (spanning_tree.empty) {
@@ -1422,8 +1416,9 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       SpanningTree::print(spanning_tree, llvm::errs());
     }
     llvm::errs() << "\n\n";
-    llvm::errs() << "Cycle Equiv. for " << function.getName() << "\n";
+
     auto graph = CycleEquivalence::Graph::compute(spanning_tree);
+    llvm::errs() << "Cycle Equiv. for " << function.getName() << "\n";
     if (!graph.valid) {
       llvm::errs() << "(cycle equivalence graph is invalid)";
     } else if (graph.empty) {
@@ -1434,8 +1429,9 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       /* CycleEquivalence::Graph::print_brackets(graph, llvm::errs()); */
     }
     llvm::errs() << "\n\n";
-    llvm::errs() << "SESE Tree for " << function.getName() << "\n";
+
     SESE::Tree sese_tree = SESE::Tree::compute(graph);
+    llvm::errs() << "SESE Tree for " << function.getName() << "\n";
     SESE::Region const * root_ptr = sese_tree.root;
     std::vector<Region> & regions = sese_tree.regions;
     for (auto & block : function) {
