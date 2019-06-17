@@ -1354,7 +1354,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
           if (hasMeta) {
             last_note_meta = inst.getMetadata("note.noelle");
             // NOTE(jordan): DEBUG
-            Annotation note = Note::parse_metadata(last_note_meta);
+            Note::Annotation note = Note::parse_metadata(last_note_meta);
             Note::print_annotation(note, llvm::errs());
             llvm::errs() << "\n";
           } else {
@@ -1434,23 +1434,23 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     llvm::errs() << "SESE Tree for " << function.getName() << "\n";
     SESE::Region const * root_ptr = sese_tree.root;
     std::vector<Region> & regions = sese_tree.regions;
-    for (auto & block : function) {
-      auto & first_inst = block.front();
-      MDNode * note_meta = first_inst.getMetadata("note.noelle");
-      Region * region = sese_tree.innermostRegionForBlock(&block);
-      Annotation note = {};
-      if (note_meta != nullptr) {
-        note = Note::parse_metadata(note_meta);
-      }
-      assert(region != nullptr);
-      region->annotation = note;
-      sese_tree.annotations.insert({ region, note });
-    }
     if (!sese_tree.valid) {
       llvm::errs() << "(sese tree is invalid)";
     } else if (sese_tree.empty) {
       llvm::errs() << "(sese tree is empty)";
     } else {
+      for (auto & block : function) {
+        auto & first_inst = block.front();
+        MDNode * note_meta = first_inst.getMetadata("note.noelle");
+        Region * region = sese_tree.innermostRegionForBlock(&block);
+        Note::Annotation note = {};
+        if (note_meta != nullptr) {
+          note = Note::parse_metadata(note_meta);
+        }
+        assert(region != nullptr);
+        region->annotation = note;
+        sese_tree.annotations.insert({ region, note });
+      }
       for (auto const & region : regions) {
         bool canonical = (region.structureType == SESE::Region::StructureType::Canonical);
         bool block_size = (region.enclosesType == SESE::Region::EnclosesType::Block);
@@ -1464,7 +1464,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
           << "\n  end    " << region.end
           << "\n  block  " << region.block;
         llvm::errs() << "\n";
-        Annotation const & note = region.annotation;
+        Note::Annotation const & note = region.annotation;
         Note::print_annotation(note, llvm::errs());
       }
     }
