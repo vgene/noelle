@@ -17,6 +17,8 @@
 #include <queue>
 #include <set>
 
+#include "Assumptions.h"
+
 using namespace std;
 using namespace llvm;
 
@@ -234,10 +236,12 @@ namespace llvm {
     bool isRemovableDependence() const { return isRemovable; }
     DataDependencyType dataDependenceType() const { return dataDepType; }
     long getMinRemovalCost () const { return minRemovalCost; }
+    const Remedies &getRemedies() const { return remeds; }
 
     void setControl(bool ctrl) { isControl = ctrl; }
     void setMemMustType(bool mem, bool must, DataDependencyType dataDepType);
     void setLoopCarried(bool lc) { isLoopCarried = lc; }
+    void setRemedies(const Remedies &R) { remeds = R; }
     void setRemovable(bool rem) { isRemovable = rem; }
     void setMinRemovalCost (long cost) { minRemovalCost = cost; }
     void processNewRemovalCost(long cost) {
@@ -248,6 +252,8 @@ namespace llvm {
     void addSubEdge(DGEdge<SubT> *edge) {
       subEdges.insert(edge);
       isLoopCarried |= edge->isLoopCarriedDependence();
+      for (auto &r : edge->getRemedies())
+        remeds.insert(r);
     }
     void removeSubEdge(DGEdge<SubT> *edge) { subEdges.erase(edge); }
     void clearSubEdges() {
@@ -265,6 +271,7 @@ namespace llvm {
     bool memory, must, isControl, isLoopCarried, isRemovable;
     DataDependencyType dataDepType;
     long minRemovalCost;
+    Remedies remeds;
   };
 
   /*
@@ -694,6 +701,7 @@ namespace llvm {
     setLoopCarried(oldEdge.isLoopCarriedDependence());
     setRemovable(oldEdge.isRemovableDependence());
     setMinRemovalCost(oldEdge.getMinRemovalCost());
+    setRemedies(oldEdge.getRemedies());
     for (auto subEdge : oldEdge.subEdges) addSubEdge(subEdge);
   }
 
