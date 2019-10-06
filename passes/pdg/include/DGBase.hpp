@@ -236,12 +236,13 @@ namespace llvm {
     bool isRemovableDependence() const { return isRemovable; }
     DataDependencyType dataDependenceType() const { return dataDepType; }
     long getMinRemovalCost () const { return minRemovalCost; }
-    const Remedies &getRemedies() const { return remeds; }
+    const SetOfRemedies &getRemedies() const { return remeds; }
 
     void setControl(bool ctrl) { isControl = ctrl; }
     void setMemMustType(bool mem, bool must, DataDependencyType dataDepType);
     void setLoopCarried(bool lc) { isLoopCarried = lc; }
-    void setRemedies(const Remedies &R) { remeds = R; }
+    void setRemedies(const SetOfRemedies &R) { remeds = R; }
+    void addRemedies(const Remedies_ptr &R) { remeds.insert(R); }
     void setRemovable(bool rem) { isRemovable = rem; }
     void setMinRemovalCost (long cost) { minRemovalCost = cost; }
     void processNewRemovalCost(long cost) {
@@ -271,7 +272,7 @@ namespace llvm {
     bool memory, must, isControl, isLoopCarried, isRemovable;
     DataDependencyType dataDepType;
     long minRemovalCost;
-    Remedies remeds;
+    SetOfRemedies remeds;
   };
 
   /*
