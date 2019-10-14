@@ -28,6 +28,10 @@ typedef std::set<Criticism *> Criticisms;
 class Remedy;
 typedef std::shared_ptr<Remedy> Remedy_ptr;
 
+struct RemedyCompare;
+
+typedef std::set<Remedy_ptr, RemedyCompare> Remedies;
+
 class Remedy {
 public:
   Criticisms resolvedC;
@@ -38,7 +42,12 @@ public:
   //virtual void apply(Task *task) = 0;
   virtual bool compare(const Remedy_ptr rhs) const = 0;
   virtual StringRef getRemedyName() const = 0;
+
+  virtual bool hasSubRemedies() { return false; }
+  virtual Remedies *getSubRemedies() { return nullptr; }
 };
+
+typedef std::shared_ptr<Remedies> Remedies_ptr;
 
 struct RemedyCompare {
   bool operator()(const Remedy_ptr &lhs, const Remedy_ptr &rhs) const {
@@ -52,10 +61,6 @@ struct RemedyCompare {
       return lhs->cost < rhs->cost;
   }
 };
-
-typedef std::set<Remedy_ptr, RemedyCompare> Remedies;
-
-typedef std::shared_ptr<Remedies> Remedies_ptr;
 
 struct RemediesCompare {
   bool operator()(const Remedies_ptr &lhs, const Remedies_ptr &rhs) const {
