@@ -45,6 +45,8 @@ public:
 
   virtual bool hasSubRemedies() { return false; }
   virtual Remedies *getSubRemedies() { return nullptr; }
+
+  virtual bool isExpensive() { return false; }
 };
 
 typedef std::shared_ptr<Remedies> Remedies_ptr;
