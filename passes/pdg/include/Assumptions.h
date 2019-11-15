@@ -15,6 +15,12 @@
 
 using namespace llvm;
 
+namespace liberty {
+namespace SpecPriv {
+struct PerformanceEstimator;
+}
+}
+
 namespace llvm {
 
 template <class T> class DGEdge;
@@ -32,8 +38,6 @@ struct RemedyCompare;
 
 typedef std::set<Remedy_ptr, RemedyCompare> Remedies;
 
-struct PerformanceEstimator;
-
 class Remedy {
 public:
   Criticisms resolvedC;
@@ -43,7 +47,8 @@ public:
 
   //virtual void apply(Task *task) = 0;
   virtual bool compare(const Remedy_ptr rhs) const = 0;
-  virtual unsigned long getCost(PerformanceEstimator *perf) const = 0;
+  virtual unsigned long
+  getCost(liberty::SpecPriv::PerformanceEstimator *perf) const = 0;
   virtual StringRef getRemedyName() const = 0;
 
   virtual bool hasSubRemedies() { return false; }
