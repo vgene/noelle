@@ -1,12 +1,21 @@
-all: passes tests
+all: tests
 
-passes:
-	cd passes ; make ; 
+external:
+	cd external ; make ;
+
+src: external
+	cd src ; make -j ; 
 	
-tests: passes
+tests: src
 	cd tests ; make ;
 
 clean:
-	cd passes ; make clean ; cd ../tests ; make clean; 
+	cd external ; make clean ; 
+	cd src ; make clean ; 
+	cd tests ; make clean; 
 
-.PHONY: passes tests
+uninstall:
+	rm -rf install ;
+	cd external ; make $@
+
+.PHONY: src tests clean uninstall external
