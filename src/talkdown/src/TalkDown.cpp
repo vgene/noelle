@@ -932,9 +932,7 @@ namespace CycleEquivalence {
  * reasonably be copied into this one for easy reference.
  */
 
-#if 0
 namespace Note {
-  using Annotation = std::map<std::string, std::string>;
   Annotation parse_metadata (MDNode * md) {
     // NOTE(jordan): MDNode is a tuple of MDString, MDString pairs
     // NOTE(jordan): Use mdconst::dyn_extract API from Metadata.h#483
@@ -949,7 +947,6 @@ namespace Note {
     }
     return result;
   }
-
   void print_annotation (Annotation value, llvm::raw_ostream & os) {
     os << "Annotation {\n";
     for (auto annotation_entry : value) {
@@ -961,7 +958,6 @@ namespace Note {
     os << "};";
   }
 }
-#endif
 
 namespace SESE {
 #if 0
@@ -1112,27 +1108,6 @@ namespace SESE {
     return same_depth;
   }
 
-  bool Tree::validAnnotation(llvm::Instruction *i1, llvm::Instruction *i2, std::string a)
-  {
-    assert(i1 != nullptr);
-    assert(i2 != nullptr);
-
-    llvm::BasicBlock *bb1 = i1->getParent();
-    llvm::BasicBlock *bb2 = i2->getParent();
-    Region *reg1 = innermostRegionForBlock(bb1);
-    Region *reg2 = innermostRegionForBlock(bb2);
-
-    Region *ancestor = getFirstCommonAncestor(reg1, reg2);
-
-    for ( auto *child : ancestor->children )
-    {
-      if ( !hasAnnotation(a, child) )
-        return false;
-    }
-
-    return true;
-  }
-
   std::vector<Region *> Tree::getAllLeafOffspring(Region *r)
   {
     std::vector<Region *> leaves;
@@ -1148,6 +1123,7 @@ namespace SESE {
       leaves.insert(leaves.end(), ret.begin(), ret.end());
     }
   }
+
 
   // NOTE(jordan): because there are regions for every block, this works.
   Region * Tree::innermostRegionForBlock (BasicBlock const * block) {
@@ -1680,6 +1656,46 @@ bool llvm::TalkDown::runOnModule (Module &M) {
 void llvm::TalkDown::getAnalysisUsage (AnalysisUsage &AU) const {
   AU.addRequired<UnifyFunctionExitNodes>();
   return;
+}
+
+SESE::Region *llvm::TalkDown::getInnermostRegion(llvm::Instruction *inst)
+{
+  return sese_tree.innermostRegionForBlock(inst->getParent());
+}
+
+SESE::Region *llvm::TalkDown::getParent(SESE::Region *r)
+{
+  return r->parent;
+}
+
+SESE::Region *llvm::TalkDown::getInnermostCommonAncestor(SESE::Region *r1, SESE::Region *r2)
+{
+  return sese_tree.getFirstCommonAncestor(r1, r2);
+}
+
+std::map<std::string, std::string> &llvm::TalkDown::getMetadata(SESE::Region *r)
+{
+  auto offspring = sese_tree.getAllLeafOffspring(r);
+  std::map<std::string, std::string> metadata = {};
+
+  // TODO(greg): this is a hack, fix this later!
+  for ( auto leaf : offspring )
+  {
+    if ( leaf->annotation.find("independent") == leaf->annotation.end() )
+    {
+      metadata["independent"] = "0";
+      return metadata;
+    }
+
+    if ( leaf->annotation["indepedent"] == "0" )
+    {
+      metadata["independent"] = "0";
+      return metadata;
+    }
+  }
+
+  metadata["independent"] = "1";
+  return metadata;
 }
 
 // Register pass with LLVM

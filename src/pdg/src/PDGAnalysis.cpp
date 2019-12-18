@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "SystemHeaders.hpp"
@@ -41,6 +41,7 @@ void llvm::PDGAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 bool llvm::PDGAnalysis::runOnModule (Module &M){
   this->M = &M;
   this->wpa = &getAnalysis<WPAPass>();
+  this->talkdown = &getAnalysis<TalkDown>();
   return false;
 }
 
@@ -170,9 +171,25 @@ void llvm::PDGAnalysis::constructEdgesFromUseDefs (PDG *pdg){
   }
 }
 
+bool llvm::PDGAnalysis::isInIndependentRegion(Instruction *memI, Instruction *memJ)
+{
+  auto rI = talkdown->getInnermostRegion(memI);
+  auto rJ = talkdown->getInnermostRegion(memJ);
+  auto common = talkdown->getInnermostCommonAncestor(rI, rJ);
+  auto &metadata = talkdown->getMetadata(common);
+
+  return (metadata["independent"] == "1");
+}
+
 template <class InstI, class InstJ>
 void llvm::PDGAnalysis::addEdgeFromMemoryAlias (PDG *pdg, Function &F, AAResults &AA, InstI *memI, InstJ *memJ, bool WAW){
   auto makeEdge = false, must = false;
+
+  /*
+   * XXX Query Talkdown before going on to other analyses
+   */
+  if ( isInIndependentRegion(memI, memJ) )
+    return;
 
   /*
    * Query the LLVM alias analyses.
@@ -221,6 +238,9 @@ void llvm::PDGAnalysis::addEdgeFromMemoryAlias (PDG *pdg, Function &F, AAResults
 void llvm::PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &AA, StoreInst *memI, CallInst *call){
   auto makeRefEdge = false, makeModEdge = false;
 
+  if ( isInIndependentRegion(memI, call) )
+    return;
+
   /*
    * Query the LLVM alias analyses.
    */
@@ -265,6 +285,9 @@ void llvm::PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResu
 void llvm::PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &AA, LoadInst *memI, CallInst *call){
   auto makeModEdge = false;
 
+  if ( isInIndependentRegion(memI, call) )
+    return;
+
   /*
    * Query the LLVM alias analyses.
    */
@@ -296,6 +319,10 @@ void llvm::PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResu
 
 void llvm::PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &AA, CallInst *otherCall, CallInst *call){
   auto makeRefEdge = false, makeModEdge = false;
+
+  if ( isInIndependentRegion(otherCall, call) )
+    return;
+
 
   /*
    * Query the LLVM alias analyses.
@@ -349,7 +376,7 @@ void llvm::PDGAnalysis::iterateInstForStoreAliases (PDG *pdg, Function &F, AARes
           addEdgeFromMemoryAlias<StoreInst, StoreInst>(pdg, F, AA, store, otherStore, true);
         }
 
-      /* 
+      /*
        * Check loads.
        */
       } else if (auto load = dyn_cast<LoadInst>(&I)) {
@@ -413,7 +440,7 @@ void llvm::PDGAnalysis::constructEdgesFromControlForFunction (PDG *pdg, Function
 
     /*
      * For each basic block that B post dominates, check if B doesn't stricly post dominate its predecessor
-     * If it does not, then there is a control dependency from the predecessor to B 
+     * If it does not, then there is a control dependency from the predecessor to B
      */
     for (auto dominatedBB : dominatedBBs)
     {
@@ -685,7 +712,7 @@ bool PDGAnalysis::edgeIsAlongNonMemoryWritingFunctions (DGEdge<Value> *edge) {
    * Handle the case both instructions are calls.
    */
   if (  true
-        && isa<CallInst>(outgoingT) 
+        && isa<CallInst>(outgoingT)
         && isa<CallInst>(incomingT)
     ) {
 
@@ -718,7 +745,7 @@ bool PDGAnalysis::edgeIsAlongNonMemoryWritingFunctions (DGEdge<Value> *edge) {
   } else {
     assert(isa<CallInst>(incomingT));
     call = cast<CallInst>(incomingT);
-    mem = outgoingT; 
+    mem = outgoingT;
   }
   auto callName = getCallFnName(call);
   return isa<LoadInst>(mem) && isFunctionNonWriting(callName)

@@ -28,31 +28,8 @@ using namespace llvm;
 
 namespace Note {
   using Annotation = std::map<std::string, std::string>;
-  Annotation parse_metadata (MDNode * md) {
-    // NOTE(jordan): MDNode is a tuple of MDString, MDString pairs
-    // NOTE(jordan): Use mdconst::dyn_extract API from Metadata.h#483
-    Annotation result = {};
-    for (auto const & pair_operand : md->operands()) {
-      using namespace llvm;
-      pair_operand->dump();
-      auto * pair = dyn_cast<MDNode>(pair_operand.get());
-      auto * key = dyn_cast<MDString>(pair->getOperand(0));
-      auto * val = dyn_cast<MDString>(pair->getOperand(1));
-      result.emplace(key->getString(), val->getString());
-    }
-    return result;
-  }
-
-  void print_annotation (Annotation value, llvm::raw_ostream & os) {
-    os << "Annotation {\n";
-    for (auto annotation_entry : value) {
-      os
-        << "\t"  << annotation_entry.first
-        << " = " << annotation_entry.second
-        << "\n";
-    }
-    os << "};";
-  }
+  Annotation parse_metadata (MDNode * md);
+  void print_annotation (Annotation value, llvm::raw_ostream & os);
 }
 
 // probably remove this namespace at some point
@@ -305,6 +282,11 @@ namespace llvm {
       bool validAnnotation(Instruction *i1, Instruction *i2, std::string a) {
         return sese_tree.validAnnotation(i1, i2, a);
       }
+
+      SESE::Region *getInnermostRegion(Instruction *);
+      SESE::Region *getParent(SESE::Region *);
+      SESE::Region *getInnermostCommonAncestor(SESE::Region *, SESE::Region *);
+      std::map<std::string, std::string> &getMetadata(SESE::Region *); // common metadata
 
     private:
       // TODO(jordan): coalesce BasicBlocks into an SESE tree.
