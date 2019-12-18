@@ -27,13 +27,13 @@ BC_FILES := $(notdir $(CPP_FILES:.cpp=.bc))
 all: baseline testseq $(OPTIMIZED)
 
 %.bc: %.c
-	$(CC) $(INCLUDES) -emit-llvm -O0 -Xclang -disable-O0-optnone -c $< -o $@
+	$(CC) $(INCLUDES) $(CFLAGS) -emit-llvm -O0 -Xclang -disable-O0-optnone -c $< -o $@
 	noelle-norm $@ -o $@
 	$(OPT) -dot-cfg -disable-output $@
 	llvm-dis $@
 
 %.bc: %.cpp
-	$(CPP) $(INCLUDES) -std=c++14 -emit-llvm -O0 -Xclang -disable-O0-optnone -c $< -o $@
+	$(CPP) $(INCLUDES) $(CPPFLAGS) -std=c++14 -emit-llvm -O0 -Xclang -disable-O0-optnone -c $< -o $@
 	noelle-norm $@ -o $@
 	$(OPT) -dot-cfg -disable-output $@
 	llvm-dis $@
@@ -54,6 +54,7 @@ test_pdgdot.bc: test_seq.bc
 	$(OPT) $(PRINTPASSES) $(ANALYSES) -heuristics -PDGPrinter $^ -o $@
 
 test_dswp_unoptimized.bc: test_seq.bc output.prof
+	echo "PARALLELIZATION_OPTIONS: $(PARALLELIZATION_OPTIONS)"
 	noelle-pgo output.prof $(PARALLELIZATION_OPTIONS) $< -o $@
 	llvm-dis $@
 
