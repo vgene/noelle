@@ -8,59 +8,39 @@
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include "llvm/Pass.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/ADT/SCCIterator.h"
-#include <set>
-#include <unordered_map>
-
-#include "../include/DGGraphTraits.hpp"
-#include "../include/SCCDAG.hpp"
+#include <SystemHeaders.hpp>
+#include "DGGraphTraits.hpp"
+#include "SCCDAG.hpp"
+#include "llvm/InitializePasses.h"
 
 using namespace llvm ;
 
-SCCDAG::SCCDAG() {
-  return ;
-}
-
-SCCDAG * SCCDAG::createSCCDAGFrom (PDG *pdg) {
-  /*
-  errs() << "XAN: PDG -> SCCDAG\n";
-  pdg->print(errs());
-  */
+SCCDAG::SCCDAG(PDG *pdg) {
 
   /*
-   * Create an empty SCCDAG.
-   */
-  auto sccDAG = new SCCDAG();
-
-  /*
-   * Iterate over all disconnected subgraphs of the PDG and calculate their strongly connected components
+   * Create nodes of the SCCDAG.
+   *
+   * Iterate over all disconnected subgraphs of the PDG and calculate their strongly connected components.
    */
   auto subgraphs = pdg->getDisconnectedSubgraphs();
-  for (auto subgraphNodeset : subgraphs)
-  {
-    auto subgraphPDG = new PDG();
-    pdg->addNodesIntoNewGraph(*cast<DG<Value>>(subgraphPDG), *subgraphNodeset, *subgraphNodeset->begin());
+  for (auto subgraphNodeset : subgraphs) {
+    PDG subgraphPDG{};
+    pdg->addNodesIntoNewGraph(*cast<DG<Value>>(&subgraphPDG), *subgraphNodeset, *subgraphNodeset->begin());
     delete subgraphNodeset;
 
     std::set<Value *> valuesInSCCs;
-    for (auto topLevelNode : subgraphPDG->getTopLevelNodes())
-    {
-      subgraphPDG->setEntryNode(topLevelNode);
+    for (auto topLevelNode : subgraphPDG.getTopLevelNodes()) {
+      subgraphPDG.setEntryNode(topLevelNode);
       std::set<DGNode<Value> *> nodes;
-      for (auto pdgI = scc_begin(subgraphPDG); pdgI != scc_end(subgraphPDG); ++pdgI)
-      {
+      for (auto pdgI = scc_begin(&subgraphPDG); pdgI != scc_end(&subgraphPDG); ++pdgI) {
+
+        /*
+         * Identify a new SCC.
+         */
         nodes.clear();
-        bool uniqueSCC = true;
-        for (auto node : *pdgI)
-        {
-          if (valuesInSCCs.find(node->getT()) != valuesInSCCs.end())
-          {
+        auto uniqueSCC = true;
+        for (auto node : *pdgI) {
+          if (valuesInSCCs.find(node->getT()) != valuesInSCCs.end()) {
             uniqueSCC = false;
             break;
           }
@@ -68,22 +48,61 @@ SCCDAG * SCCDAG::createSCCDAGFrom (PDG *pdg) {
           valuesInSCCs.insert(node->getT());
         }
 
-        if (!uniqueSCC) continue;
+        if (!uniqueSCC) {
+          continue;
+        }
+
+        /*
+         * Add a new SCC to the SCCDAG.
+         */
         auto scc = new SCC(nodes);
-        sccDAG->addNode(scc, /*inclusion=*/ true);
+        this->addNode(scc, /*inclusion=*/ true);
       }
     }
 
     /*
      * Delete just the subgraph holder, not the nodes/edges which belong to the pdg input
      */
-    subgraphPDG->clear();
-    delete subgraphPDG;
+    subgraphPDG.clear();
   }
 
-  sccDAG->markValuesInSCC();
-  sccDAG->markEdgesAndSubEdges();
-  return sccDAG;
+  /*
+   * Create the map from a Value to an SCC included in the SCCDAG.
+   */
+  this->markValuesInSCC();
+
+  /*
+   * Create dependences between nodes of the SCCDAG.
+   */
+  this->markEdgesAndSubEdges();
+
+  /*
+   * Add live-ins and live-outs.
+   */
+  for (auto nodeI : pdg->externalNodePairs()) {
+
+    /*
+     * Fetch the live in/out variable.
+     */
+    auto externalNode = nodeI.second;
+    auto externalValue = externalNode->getT();
+    errs() << "CUCU " << *externalValue << "\n";
+
+    /*
+     * Create an SCC for it.
+     * This is because the template class DG is not general enough to handle different types between internal and external nodes.
+     */
+    std::set<DGNode<Value> *> nodes;
+    nodes.insert(externalNode);
+    auto newSCC = new SCC(nodes, false);
+
+    /*
+     * Add the live-in/out SCC to the SCCDAG as external node.
+     */
+    this->addNode(newSCC, /*inclusion=*/ false);
+  }
+
+  return ;
 }
       
 bool SCCDAG::doesItContain (Instruction *inst) const {
@@ -96,32 +115,41 @@ bool SCCDAG::doesItContain (Instruction *inst) const {
   return SCC != nullptr;
 }
 
-void SCCDAG::markValuesInSCC() {
+void SCCDAG::markValuesInSCC (void) {
 
   /*
    * Maintain association of each internal node to its SCC
    */
   this->valueToSCCNode.clear();
-  for (auto sccNode : this->getNodes())
-  {
-    for (auto instPair : sccNode->getT()->internalNodePairs())
-    {
+  for (auto SCCPair : this->internalNodePairs()) {
+    auto scc = SCCPair.first;
+    auto sccNode = SCCPair.second;
+    for (auto instPair : scc->internalNodePairs()) {
       this->valueToSCCNode[instPair.first] = sccNode;
     }
   }
 }
 
-void SCCDAG::markEdgesAndSubEdges()
-{
+void SCCDAG::markEdgesAndSubEdges (void) {
+
   /*
    * Add edges between SCCs by looking at each SCC's outgoing edges
+   *
+   * Iterate across SCCs.
    */
   std::set<DGEdge<SCC> *> clearedEdges;
-  for (auto outgoingSCCNode : this->getNodes())
-  {
-    auto outgoingSCC = outgoingSCCNode->getT();
-    for (auto externalNodePair : outgoingSCC->externalNodePairs())
-    {
+  for (auto outgoingSCCPair : this->internalNodePairs()){
+
+    /*
+     * Fetch the current SCC.
+     */
+    auto outgoingSCC = outgoingSCCPair.first;
+    auto outgoingSCCNode = outgoingSCCPair.second;
+
+    /*
+     * Check dependences that go outside the current SCC.
+     */
+    for (auto externalNodePair : outgoingSCC->externalNodePairs()) {
       auto incomingNode = externalNodePair.second;
       if (incomingNode->numIncomingEdges() == 0) continue;
 
@@ -182,8 +210,8 @@ int64_t SCCDAG::numberOfInstructions (void) {
    * Iterate over SCCs.
    */
   int64_t n = 0;
-  for (auto sccNode : this->getNodes()){
-    auto SCC = sccNode->getT();
+  for (auto SCCPair : this->internalNodePairs()){
+    auto SCC = SCCPair.first;
     n += SCC->numberOfInstructions();
   }
 
@@ -195,13 +223,72 @@ bool SCCDAG::iterateOverInstructions (std::function<bool (Instruction *)> funcTo
   /*
    * Iterate over SCC.
    */
+  for (auto sccNodePair : this->internalNodePairs()){
+
+    /*
+     * Iterate over instructions contained in the SCC.
+     */
+    auto SCC = sccNodePair.first;
+    if (SCC->iterateOverInstructions(funcToInvoke)){
+      return true;
+    }
+  }
+
+  return false ;
+}
+
+bool SCCDAG::iterateOverLiveInAndLiveOut (std::function<bool (Value *)> funcToInvoke){
+
+  /*
+   * Iterate over live-ins and live-outs of SCCs.
+   *
+   * A live-in/live-out is an SCC, which in the simplest case, it is a Value
+   */
+  for (auto sccNodePair : this->externalNodePairs()){
+
+    /*
+     * Iterate over internal nodes of the current SCC.
+     */
+    auto SCC = sccNodePair.first;
+    if (SCC->iterateOverValues(funcToInvoke)){
+      return true;
+    }
+  }
+
+  return false ;
+}
+
+bool SCCDAG::iterateOverAllInstructions (std::function<bool (Instruction *)> funcToInvoke){
+
+  /*
+   * Iterate over SCC.
+   */
   for (auto sccNode : this->getNodes()){
 
     /*
      * Iterate over instructions contained in the SCC.
      */
     auto SCC = sccNode->getT();
-    if (SCC->iterateOverInstructions(funcToInvoke)){
+    if (SCC->iterateOverAllInstructions(funcToInvoke)){
+      return true;
+    }
+  }
+
+  return false ;
+}
+
+bool SCCDAG::iterateOverAllValues (std::function<bool (Value *)> funcToInvoke){
+
+  /*
+   * Iterate over SCC.
+   */
+  for (auto sccNode : this->getNodes()){
+
+    /*
+     * Iterate over instructions contained in the SCC.
+     */
+    auto SCC = sccNode->getT();
+    if (SCC->iterateOverAllValues(funcToInvoke)){
       return true;
     }
   }
@@ -214,8 +301,8 @@ bool SCCDAG::iterateOverSCCs (std::function<bool (SCC *)> funcToInvoke){
   /*
    * Iterate over SCC.
    */
-  for (auto sccNode : this->getNodes()){
-    auto SCC = sccNode->getT();
+  for (auto SCCPair : this->internalNodePairs()){
+    auto SCC = SCCPair.first;
     if (funcToInvoke(SCC)){
       return true;
     }

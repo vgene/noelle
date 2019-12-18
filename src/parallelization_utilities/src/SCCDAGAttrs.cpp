@@ -27,12 +27,7 @@ void SCCDAGAttrs::populate (SCCDAG *loopSCCDAG, LoopsSummary &LIS, ScalarEvoluti
   /*
    * Tag SCCs depending on their characteristics.
    */
-  for (auto node : loopSCCDAG->getNodes()) {
-
-    /*
-     * Fetch the current SCC.
-     */
-    auto scc = node->getT();
+  loopSCCDAG->iterateOverSCCs([this, &SE, &LIS](SCC *scc) -> bool {
 
     /*
      * Allocate the metadata about this SCC.
@@ -59,7 +54,9 @@ void SCCDAGAttrs::populate (SCCDAG *loopSCCDAG, LoopsSummary &LIS, ScalarEvoluti
     } else {
       sccInfo->setType(SCCAttrs::SCCType::SEQUENTIAL);
     }
-  }
+
+    return false;
+  });
 
   collectSCCGraphAssumingDistributedClones();
 
@@ -76,8 +73,25 @@ std::set<SCC *> SCCDAGAttrs::getSCCsWithLoopCarriedDependencies (void) const {
       
 std::set<SCC *> SCCDAGAttrs::getSCCsWithLoopCarriedControlDependencies (void) const {
   std::set<SCC *> sccs;
+
+  /*
+   * Iterate over SCCs with loop-carried data dependences.
+   */
   for (auto &sccDependencies : this->interIterDeps) {
+
+    /*
+     * Fetch the SCC.
+     */
+    auto SCC = sccDependencies.first;
+
+    /*
+     * Fetch the set of loop-carried data dependences of the current SCC.
+     */
     auto &deps = sccDependencies.second;
+
+    /*
+     * Check if this SCC has a control loop-carried data dependence.
+     */
     auto isControl = false;
     for (auto dep : deps){
       if (dep->isControlDependence()){
@@ -89,13 +103,31 @@ std::set<SCC *> SCCDAGAttrs::getSCCsWithLoopCarriedControlDependencies (void) co
       sccs.insert(sccDependencies.first);
     }
   }
+
   return sccs;
 }
 
 std::set<SCC *> SCCDAGAttrs::getSCCsWithLoopCarriedDataDependencies (void) const {
   std::set<SCC *> sccs;
+
+  /*
+   * Iterate over SCCs with loop-carried data dependences.
+   */
   for (auto &sccDependencies : this->interIterDeps) {
+
+    /*
+     * Fetch the SCC.
+     */
+    auto SCC = sccDependencies.first;
+
+    /*
+     * Fetch the set of loop-carried data dependences of the current SCC.
+     */
     auto &deps = sccDependencies.second;
+
+    /*
+     * Check if this SCC has data loop-carried data dependence.
+     */
     auto isData = false;
     for (auto dep : deps){
       if (dep->isDataDependence()){
@@ -104,7 +136,7 @@ std::set<SCC *> SCCDAGAttrs::getSCCsWithLoopCarriedDataDependencies (void) const
       }
     }
     if (isData){
-      sccs.insert(sccDependencies.first);
+      sccs.insert(SCC);
     }
   }
   return sccs;
@@ -259,12 +291,7 @@ void SCCDAGAttrs::identifyInterIterationDependences (LoopsSummary &LIS){
    *
    * Control dependency back edges are from conditional branches to instructions in loop headers.
    */
-  for (auto sccNode : this->sccdag->getNodes()) {
-
-    /*
-     * Fetch an SCC of the current loop.
-     */
-    auto scc = sccNode->getT();
+  this->sccdag->iterateOverSCCs([this, &LIS](SCC *scc) -> bool {
 
     /*
      * Iterate over each instruction within the current SCC.
@@ -399,7 +426,9 @@ void SCCDAGAttrs::identifyInterIterationDependences (LoopsSummary &LIS){
       assert(false && "SCCDAGAttrs::collectDependencies");
     }
     */
+    return false;
   }
+  );
 
   return ;
 }
