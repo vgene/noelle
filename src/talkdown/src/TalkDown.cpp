@@ -1463,6 +1463,7 @@ bool llvm::TalkDown::doInitialization (Module &M) {
 
 // TODO(jordan): it looks like this can be refactored as a FunctionPass
 bool llvm::TalkDown::runOnModule (Module &M) {
+
   /* 1. Identify annotation ranges
    * 2. Split BasicBlocks wherever the annotation changes
    * 3. Construct SESE Tree at BasicBlock granularity; write query APIs
@@ -1583,8 +1584,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     }
     llvm::errs() << "\n\n";
 
-    SESE::Tree sese_tree = SESE::Tree::compute(graph);
-    /* this->sese_tree = SESE::Tree::compute(graph); */
+    this->sese_tree = SESE::Tree::compute(graph);
     llvm::errs().changeColor(llvm::raw_ostream::GREEN);
     llvm::errs() << "SESE Tree for " << function.getName() << "\n";
     llvm::errs().resetColor();
