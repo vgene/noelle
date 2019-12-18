@@ -28,6 +28,7 @@
 
 namespace SESE {
 // Abstract Edge type
+#if 0
 template <typename NodeTy>
   struct AbstractEdge : std::pair<NodeTy const *, NodeTy const *> {
     AbstractEdge (NodeTy const * a, NodeTy const * b)
@@ -46,11 +47,14 @@ template <typename NodeTy>
       }
     }
   };
+#endif
 }
 
 namespace SESE {
 namespace UndirectedCFG {
+#if 0
   struct Node {
+    uint64_t number;
     BasicBlock * block;
   };
   using Edge = SESE::AbstractEdge<Node>;
@@ -61,12 +65,14 @@ namespace UndirectedCFG {
     std::vector<Node> const nodes;
     std::vector<Edge> const edges;
   };
+#endif
 
   Graph compute (llvm::Function & function) {
     if (std::begin(function) == std::end(function)) {
       return { /* valid */ true, /* empty */ true };
     }
     std::vector<Node> nodes;
+    uint64_t counter = 0;
     for (llvm::BasicBlock & block : function) {
       // NOTE(jordan): do not handle unreachable blocks.
       if (true
@@ -76,7 +82,8 @@ namespace UndirectedCFG {
         llvm::errs() << "Unreachable block found! Aborting...\n";
         return { /* valid */ false };
       }
-      nodes.push_back({ &block });
+      nodes.push_back({ counter, &block });
+      counter++;
     }
     /* NOTE(jordan): because the resizing of the vector causes pointers to
      * change, this loop cannot be combined with the above loop.
@@ -108,13 +115,20 @@ namespace UndirectedCFG {
 
   void print (Graph const & graph, llvm::raw_ostream & os) {
     assert(graph.valid);
+    for (auto const &node : graph.nodes)
+    {
+      os << "********************************************************************************\n";
+      os << "Node " << node.number << "; block " << node.block << "\n";
+      node.block->dump();
+      os << "--------------------------------------------------------------------------------\n";
+    }
     for (auto const & entry : graph.edges) {
       auto const & a = entry.first;
       auto const & b = entry.second;
       os
         << "\nEdge:"
-        << "\n\tNode (" << a << "; BB " << a->block << ")"
-        << "\n\tNode (" << b << "; BB " << b->block << ")";
+        << "\n\tNode (" << a->number << "; BB " << a->block << ")"
+        << "\n\tNode (" << b->number << "; BB " << b->block << ")";
     }
   }
 } // namespace UndirectedCFG
@@ -122,6 +136,7 @@ namespace UndirectedCFG {
 
 namespace SESE {
 namespace SpanningTree {
+#if 0
   struct Node {
     Node (int dfs_index, BasicBlock * block, Node const * parent)
       : dfs_index(dfs_index), block(block), parent(parent)
@@ -142,6 +157,7 @@ namespace SpanningTree {
     std::vector<Node *> nodes; // nodes ordered by visitation order
     std::vector<Backedge> backedges; // NOTE: back-edges are unordered
   };
+#endif
 
   Tree compute (
     UndirectedCFG::Graph const &,
@@ -355,6 +371,7 @@ namespace SpanningTree {
 
 namespace SESE {
 namespace CycleEquivalence {
+#if 0
   struct BracketList; // NOTE(jordan): forward declarations for Edge.
   struct Node;
   using EdgeBase = SESE::AbstractEdge<Node>;
@@ -436,6 +453,7 @@ namespace CycleEquivalence {
     static void print (Graph const &, llvm::raw_ostream &, bool);
     static void print_brackets (Graph const &, llvm::raw_ostream &);
   };
+#endif
 
   bool Node::descends_from (
     Node const & ancestor,
@@ -528,6 +546,7 @@ namespace CycleEquivalence {
       Node const & dest = dfs_nodes.at(backedge.second->dfs_index);
       all_backedges.push_back({ &node, &dest });
     }
+    // gc14: is this part of the algorithm?
     // 2.b. Add the artificial back-edge from the exit to the start node
     // NOTE(jordan): assumes function.begin() is the entry node
     Node & start = dfs_nodes.at(0);
@@ -539,9 +558,11 @@ namespace CycleEquivalence {
     }
     assert(exit_node_dfs_index != -1);
     Node & exit = dfs_nodes.at(exit_node_dfs_index);
+    /* XXX gc14: commented this out to test for now */
     all_backedges.push_back({ &exit, &start });
     exit.backedges.push_back(start.dfs_index);
     if (&start != &exit) start.backedges.push_back(exit.dfs_index);
+    /**/
     // 2.c. Compute the graph of forward-edges.
     for (auto & edge : all_edges) {
       Node const & node = *edge.first;
@@ -667,6 +688,9 @@ namespace CycleEquivalence {
         Node const & child = dfs_nodes.at(child_dfs_index);
         node.bracket_list.concat(child.bracket_list);
       }
+      llvm::errs() << "Bracket list of node " << &node << ":\n";
+      for (int i = 0; i < node.bracket_list.size(); i++)
+        llvm::errs() << "\t" << node.bracket_list.brackets[i]->first << " <--> " << node.bracket_list.brackets[i]->second << "\n";
       // for each capping backedge d from a descendant of n to n do
       for (auto const & up_backedge : capping_backedges.at(&node)) {
         Edge const & capping_backedge = *up_backedge;
@@ -764,6 +788,16 @@ namespace CycleEquivalence {
         );
         Edge & parent_edge = **parent_edge_it;
         // b = top(n.blist)
+        if ( node.bracket_list.size() == 0 )
+        {
+          llvm::errs() << "Bracket list for node " << node.block << " of size 0!\n";
+          /* return {false}; */
+        }
+        if ( node.bracket_list.top() == nullptr )
+        {
+          llvm::errs() << "Top of bracket list for node " << node.block << " is nullptr!\n";
+          /* return {false}; */
+        }
         Edge & bracket = *node.bracket_list.top();
         // if b.recentSize != size(n.blist) then
         if (bracket.recent_size != node.bracket_list.size()) {
@@ -897,6 +931,8 @@ namespace CycleEquivalence {
  * the exception perhaps of using git submodules) how that codebase could
  * reasonably be copied into this one for easy reference.
  */
+
+#if 0
 namespace Note {
   using Annotation = std::map<std::string, std::string>;
   Annotation parse_metadata (MDNode * md) {
@@ -905,6 +941,7 @@ namespace Note {
     Annotation result = {};
     for (auto const & pair_operand : md->operands()) {
       using namespace llvm;
+      pair_operand->dump();
       auto * pair = dyn_cast<MDNode>(pair_operand.get());
       auto * key = dyn_cast<MDString>(pair->getOperand(0));
       auto * val = dyn_cast<MDString>(pair->getOperand(1));
@@ -924,8 +961,10 @@ namespace Note {
     os << "};";
   }
 }
+#endif
 
 namespace SESE {
+#if 0
   using Node = CycleEquivalence::Node;
   using Edge = CycleEquivalence::Edge;
   struct RegionBoundary {
@@ -953,12 +992,29 @@ namespace SESE {
     // NOTE(jordan): only non-root Regions have start & end Edges
     Edge const * start = nullptr;
     Edge const * end   = nullptr;
+
+
     // NOTE(jordan): only a Region of EnclosesType::Region has children.
     std::vector<Region *> children = {};
     // NOTE(jordan): only a Region of EnclosesType::Block has a block.
     BasicBlock * block = nullptr;
     // NOTE(jordan): every Region has a (possibly empty) annotation.
     Note::Annotation annotation = {};
+
+    /* Basic blocks contained in regions under this one, or just the
+     * basic block if enclosesType == Block, for convenience/testing
+     */
+    std::vector<BasicBlock *> basic_block_offspring = {};
+
+    /* Same as above but with regions
+     */
+    std::vector<Region *> region_offspring = {};
+
+    /*
+     * Get all regions that are offspring of this region
+     */
+    void getAllOffspringRegions( void );
+
   };
   struct Tree {
     bool valid;
@@ -967,18 +1023,131 @@ namespace SESE {
     std::vector<Region> regions;
     std::map<Region const *, Note::Annotation> annotations;
     static Tree compute (CycleEquivalence::Graph const &);
+
     // NOTE(jordan): traversal methods.
     Region * innermostRegionForBlock (BasicBlock const *);
     Region * out (Region const &);
     Region * in  (Region const &);
     Region * out_canonical (Region const &);
     Region * in_canonical  (Region const &);
+
     // NOTE(jordan): annotation getter/setters.
     using string = std::string;
-    bool hasAnnotation (string, Region const *);
+    bool hasAnnotation (string key, Region const *r) { return r->annotation.find(key) != r->annotation.end(); }
     std::string getAnnotation (string, Region const *);
     void upsertAnnotation (string, string, Region const *);
+
+    /*
+     * Return the first common ancestor, null if root
+     */
+    Region *getFirstCommonAncestor(Region *r1, Region *r2);
+
+    /*
+     * If the basic blocks of i1 and i2 share an ancestor with this annotation
+     * then it is valid, otherwise not
+     */
+    bool validAnnotation(llvm::Instruction *i1, llvm::Instruction *i2, string a);
+
+    /*
+     *
+     */
+    std::vector<Region *> getAllLeafOffspring(Region *r);
   };
+#endif
+
+  std::vector<Region *> getAllOffspringRegionsRecursive( Region *reg )
+  {
+    std::vector<Region *> offspring = {};
+
+    if ( reg->enclosesType == SESE::Region::EnclosesType::Block )
+      return { reg };
+
+    for ( Region *reg : reg->children )
+    {
+      if ( reg->enclosesType != SESE::Region::EnclosesType::Block )
+        offspring.push_back(reg);
+      std::vector<Region *> ret = getAllOffspringRegionsRecursive(reg);
+      offspring.insert(offspring.end(), ret.begin(), ret.end());
+    }
+
+    return offspring;
+  }
+
+  void Region::getAllOffspringRegions( void )
+  {
+    region_offspring = getAllOffspringRegionsRecursive(this);
+  }
+
+  Region *Tree::getFirstCommonAncestor(Region *r1, Region *r2)
+  {
+    assert(r1->depth >= 0);
+    assert(r2->depth >= 0);
+
+    // if one region has a deeper depth, go up in tree until same depth
+    Region *same_depth, *other;
+    if ( r1->depth > r2->depth )
+    {
+      same_depth = r1;
+      other = r2;
+    }
+    else if ( r1->depth < r2->depth )
+    {
+      same_depth = r2;
+      other = r1;
+    }
+    while ( same_depth != nullptr && same_depth->depth > other->depth )
+      same_depth = same_depth->parent;
+
+    while ( same_depth != root )
+    {
+      if ( same_depth == other )
+        break;
+      same_depth = same_depth->parent;
+      other = other->parent;
+    }
+
+    if ( same_depth == root )
+      same_depth = nullptr;
+
+    return same_depth;
+  }
+
+  bool Tree::validAnnotation(llvm::Instruction *i1, llvm::Instruction *i2, std::string a)
+  {
+    assert(i1 != nullptr);
+    assert(i2 != nullptr);
+
+    llvm::BasicBlock *bb1 = i1->getParent();
+    llvm::BasicBlock *bb2 = i2->getParent();
+    Region *reg1 = innermostRegionForBlock(bb1);
+    Region *reg2 = innermostRegionForBlock(bb2);
+
+    Region *ancestor = getFirstCommonAncestor(reg1, reg2);
+
+    for ( auto *child : ancestor->children )
+    {
+      if ( !hasAnnotation(a, child) )
+        return false;
+    }
+
+    return true;
+  }
+
+  std::vector<Region *> Tree::getAllLeafOffspring(Region *r)
+  {
+    std::vector<Region *> leaves;
+
+    // in leaf
+    if ( r->enclosesType == SESE::Region::EnclosesType::Block )
+      return { r };
+
+    // get leaves of all children
+    for ( auto *child : r->children )
+    {
+      std::vector<Region *> ret = getAllLeafOffspring(child);
+      leaves.insert(leaves.end(), ret.begin(), ret.end());
+    }
+  }
 
   // NOTE(jordan): because there are regions for every block, this works.
   Region * Tree::innermostRegionForBlock (BasicBlock const * block) {
@@ -1298,6 +1467,10 @@ namespace SESE {
     auto region_boundaries = SESE::find_region_boundaries(graph);
     auto reify_result = SESE::reify_regions(region_boundaries, graph);
     Region const * root = reify_result.first;
+
+    /* After we have all the regions, populate the basic_block_offspring
+     * of each region */
+
     std::vector<Region> & regions = reify_result.second;
     return {
       /* valid   */ true,
@@ -1327,6 +1500,9 @@ bool llvm::TalkDown::runOnModule (Module &M) {
   // TODO(jordan): refactor this into its own function.
   for (auto & function : M) {
     MDNode * last_note_meta = nullptr;
+    // if function declaration, skip creating a SESE tree for it
+    if ( function.isDeclaration() )
+      continue;
     for (auto & block : function) {
       for (auto & inst : block) {
         /* NOTE(jordan): When there's a new annotation (or none, when
@@ -1416,6 +1592,7 @@ bool llvm::TalkDown::runOnModule (Module &M) {
       SpanningTree::print(spanning_tree, llvm::errs());
     }
     llvm::errs() << "\n\n";
+    llvm::errs() << "Done with printing spanning tree\n";
 
     auto graph = CycleEquivalence::Graph::compute(spanning_tree);
     llvm::errs() << "Cycle Equiv. for " << function.getName() << "\n";
@@ -1431,7 +1608,10 @@ bool llvm::TalkDown::runOnModule (Module &M) {
     llvm::errs() << "\n\n";
 
     SESE::Tree sese_tree = SESE::Tree::compute(graph);
+    /* this->sese_tree = SESE::Tree::compute(graph); */
+    llvm::errs().changeColor(llvm::raw_ostream::GREEN);
     llvm::errs() << "SESE Tree for " << function.getName() << "\n";
+    llvm::errs().resetColor();
     SESE::Region const * root_ptr = sese_tree.root;
     std::vector<Region> & regions = sese_tree.regions;
     if (!sese_tree.valid) {
@@ -1451,22 +1631,42 @@ bool llvm::TalkDown::runOnModule (Module &M) {
         region->annotation = note;
         sese_tree.annotations.insert({ region, note });
       }
-      for (auto const & region : regions) {
+      int num_regions = 0;
+      for (auto & region : regions) {
         bool canonical = (region.structureType == SESE::Region::StructureType::Canonical);
         bool block_size = (region.enclosesType == SESE::Region::EnclosesType::Block);
+        region.getAllOffspringRegions();
+        llvm::errs().changeColor(llvm::raw_ostream::GREEN);
         llvm::errs()
           << "\nRegion (" << &region << ")"
           << (canonical  ? " CANONICAL" : "")
-          << (block_size ? " BLOCK"     : "")
+          << (block_size ? " BLOCK"     : "");
+        llvm::errs().resetColor();
+        llvm::errs()
           << "\n  depth  " << region.depth
           << "\n  parent " << region.parent
           << "\n  start  " << region.start
           << "\n  end    " << region.end
-          << "\n  block  " << region.block;
+          << "\n  block  " << region.block << (region.block != nullptr ? " ==> " + region.block->getName() : "");
         llvm::errs() << "\n";
         Note::Annotation const & note = region.annotation;
         Note::print_annotation(note, llvm::errs());
+        llvm::errs().changeColor(llvm::raw_ostream::YELLOW);
+        llvm::errs() << "\nOffspring regions {\n";
+        llvm::errs().resetColor();
+        for ( auto *offspring : region.region_offspring )
+        {
+          llvm::errs() << "  " << offspring << "\n";
+        }
+        llvm::errs().changeColor(llvm::raw_ostream::YELLOW);
+        llvm::errs() << "}";
+        llvm::errs().resetColor();
+        num_regions++;
       }
+      llvm::errs().changeColor(llvm::raw_ostream::BLUE);
+      llvm::errs() << "\nNumber of regions: ";
+      llvm::errs().resetColor();
+      llvm::errs() << num_regions;
     }
     // TODO(jordan): coalescing
     // Sort regions by depth in ascending order (deepest-first)
