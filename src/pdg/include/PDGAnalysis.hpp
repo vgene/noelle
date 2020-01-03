@@ -18,7 +18,7 @@
 #include "PDG.hpp"
 #include "AllocAA.hpp"
 #include "PDGPrinter.hpp"
-#include "TalkDown.hpp"
+#include "Talkdown.hpp"
 
 using namespace llvm;
 
@@ -47,7 +47,7 @@ namespace llvm {
       WPAPass *wpa;
       AllocAA *allocAA;
       std::set<Function *> CGUnderMain;
-      TalkDown *talkdown;
+      Talkdown *talkdown;
       PDGVerbosity verbose;
       PDGPrinter printer;
 

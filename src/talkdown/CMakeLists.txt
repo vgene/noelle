@@ -32,4 +32,4 @@ include(AddLLVM)
 add_subdirectory(src)
 
 # Install
-install(PROGRAMS include/TalkDown.hpp DESTINATION include)
+install(PROGRAMS include/Talkdown.hpp DESTINATION include)
