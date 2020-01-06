@@ -3,6 +3,8 @@
 
 #include "Tree.hpp"
 
+#include <iostream>
+
 using namespace llvm;
 
 namespace llvm
@@ -11,6 +13,11 @@ namespace llvm
 FunctionTree::FunctionTree()
 {
   root = nullptr;
+}
+
+FunctionTree::~FunctionTree()
+{
+
 }
 
 FunctionTree::FunctionTree(Function *f) : FunctionTree()
@@ -22,7 +29,11 @@ bool FunctionTree::splitNodesRecursive(SESENode *node)
 {
   for ( auto child : node->getChildren() )
   {
-    std::vector<Instruction *> split_points = child->findSplitPoints();
+    // std::vector<Instruction *> split_points = child->findSplitPoints();
+    auto split_points = child->findSplitPoints();
+    /* std::cerr << "Split points for " << node << ":\n"; */
+    /* for ( auto &it : split_points ) */
+    /*   std::cerr << "\t" << *(it.first) << "\n"; */
 
     if ( split_points.size() == 0 )
       continue;
@@ -35,11 +46,12 @@ bool FunctionTree::splitNodesRecursive(SESENode *node)
     for ( auto split : split_points )
     {
       SESENode *added_node = new SESENode();
-      while ( *current_inst != split )
+      while ( *current_inst != split.first )
       {
         added_node->addInstruction( *current_inst );
         current_inst++;
       }
+      child->addAnnotations(split.second);
       child->addChild( added_node );
     }
 
@@ -72,8 +84,10 @@ bool FunctionTree::constructTree(Function *f)
   // modified |= insertSplits();
 
   // construct root node
+  // TODO(greg): with annotation of function if there is one
   this->root = new SESENode();
   root->setDepth( 0 );
+  root->addAnnotation(std::pair<std::string, std::string>("Root", ""));
   root->setParent( nullptr );
 
   // add all basic blocks as children of root
@@ -85,92 +99,16 @@ bool FunctionTree::constructTree(Function *f)
     root->addChild( node );
   }
 
+  // split children nodes recursively until all annotations are split
   splitNodesRecursive( root );
 
   return modified;
-
-#if 0
-  // NOTE(greg): probably make this recursive
-  for ( auto node : root->getChildren() )
-  {
-    std::vector<Instruction *> split_points = node->findSplitPoints();
-
-    if ( split_points.size() == 0 )
-      continue;
-
-    // TODO(greg): Split basic block and change tree
-    //  1. Create nodes with instructions from before and after split points
-    //  2. Remove instructions from current node
-    //  3. Set children of current node to be nodes created in (1)
-    auto current_inst = node->getInstructions().begin();
-    for ( auto split : split_points )
-    {
-      SESENode *added_node = new SESENode();
-      while ( *current_inst != split )
-      {
-        added_node->addInstruction( *current_inst );
-        current_inst++;
-      }
-      node->addChild( added_node );
-    }
-
-    // need to add instructions after last split
-    SESENode *added_node = new SESENode();
-    while ( current_inst != node->getInstructions().end() )
-    {
-      added_node->addInstruction( *current_inst );
-      current_inst++;
-    }
-    node->addChild( added_node );
-
-    // clear instructions from intermediate node
-    node->clearInstructions();
-
-    // call the recursive function here??
-  }
-#endif
 }
 
 std::ostream &operator<<(std::ostream &os, const FunctionTree &tree)
 {
-}
-
-bool FunctionTree::insertSplits()
-{
-  MDNode *last_meta_node = nullptr;
-  bool has_meta = false;
-  std::vector<Instruction *> split_points;
-
-  for ( auto &bb : *associated_function )
-  {
-    for ( auto &inst : bb )
-    {
-      has_meta = inst.hasMetadata();
-
-      // if metadata changed between instructions, split basic block
-      if ( (!has_meta && last_meta_node != nullptr ) ||
-           (inst.getMetadata("note.noelle") != last_meta_node) )
-      {
-        // not first or last instruction in basic block
-        if ( &inst != &*bb.begin() && &inst != &*std::prev(bb.end()) )
-          split_points.push_back( &inst );
-
-        if ( has_meta )
-        {
-          last_meta_node = inst.getMetadata("note.noelle");
-          last_meta_node->dump();
-        }
-      }
-    }
-  }
-
-  if ( split_points.size() == 0 )
-    return false;
-
-  for ( auto inst : split_points )
-    SplitBlock( inst->getParent(), inst );
-
-  return true;
+  os << "Function: " << tree.associated_function->getName().str() << "\n";
+  return tree.root->recursivePrint( os );
 }
 
 } // namespace llvm

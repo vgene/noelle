@@ -1,4 +1,5 @@
 #include "Node.hpp"
+#include <iostream>
 #include <map>
 #include <unordered_map>
 
@@ -14,13 +15,16 @@ namespace llvm
 
     parent = nullptr;
     basic_block = nullptr;
+
+    annotations = std::unordered_map<std::string, std::string>();
+    inherited_annotations = std::unordered_map<std::string, std::string>();
   }
 
   SESENode::SESENode(BasicBlock *bb) : SESENode()
   {
     basic_block = bb;
 
-    // do we want to do this here or split it as a separate function
+    // do we want to do this here or split it as a separate function?
     for ( auto &inst : *bb )
       instructions.push_back( &inst );
   }
@@ -28,6 +32,11 @@ namespace llvm
   void SESENode::setParent(SESENode *node)
   {
     parent = node;
+
+    // correct place to do this?
+    if ( node != nullptr)
+      inherited_annotations = parent->getAnnotation();
+    // annotations.insert(inherited_annotations.begin(), inherited_annotations.end());
   }
 
   void SESENode::setDepth(int d)
@@ -56,8 +65,14 @@ namespace llvm
     this->instructions.clear();
   }
 
-  void SESENode::setAnnotation(std::pair<std::string, std::string> annot)
+  void SESENode::addAnnotation(std::pair<std::string, std::string> annot)
   {
+    annotations.emplace( annot );
+  }
+
+  void SESENode::addAnnotations(std::unordered_map<std::string, std::string> annot)
+  {
+    annotations.insert( annot.begin(), annot.end() );
   }
 
   std::vector<Instruction *> SESENode::getInstructions()
@@ -65,16 +80,36 @@ namespace llvm
     return this->instructions;
   }
 
-  std::unordered_map<std::string, std::string> &SESENode::getAnnotation( void )
+  const std::unordered_map<std::string, std::string> &SESENode::getAnnotation() const
   {
-    return this->annotations;
+    return annotations;
   }
 
-  std::vector<Instruction *> SESENode::findSplitPoints()
+  bool SESENode::isLeaf() const
+  {
+    return is_leaf;
+  }
+
+  std::unordered_map<std::string, std::string> parse_metadata(MDNode *meta_node)
+  {
+    std::unordered_map<std::string, std::string> annotation_result = {};
+    for ( auto &pair_operand : meta_node->operands() )
+    {
+      auto *pair   = dyn_cast<MDNode>(pair_operand.get());
+      auto *key    = dyn_cast<MDString>(pair->getOperand(0));
+      auto *value  = dyn_cast<MDString>(pair->getOperand(1));
+      annotation_result.emplace(key->getString(), value->getString());
+    }
+
+    return annotation_result;
+  }
+
+  const std::vector<std::pair<Instruction *, SESENode::Annotations> > SESENode::findSplitPoints() const
   {
     MDNode *last_meta_node = nullptr;
     bool has_meta = false;
     std::vector<Instruction *> split_points;
+    std::vector<std::pair<Instruction *, Annotations> > split_complete;
     for ( auto &inst : *basic_block )
     {
       has_meta = inst.hasMetadata();
@@ -85,36 +120,66 @@ namespace llvm
       {
         // not first or last instruction in basic block
         if ( &inst != &*basic_block->begin() && &inst != &*std::prev(basic_block->end()) )
+        {
           split_points.push_back( &inst );
+          std::unordered_map<std::string, std::string> current_annot = parse_metadata( inst.getMetadata("note.noelle") );
+          std::cerr << "Adding these noelle notes to split:\n";
+          for ( auto it : current_annot )
+            std::cerr << it.first << " : " << it.second << "\n";
+          split_complete.push_back( std::pair<Instruction *, Annotations>(&inst, current_annot) );
+        }
 
         if ( has_meta )
         {
           last_meta_node = inst.getMetadata("note.noelle");
-          last_meta_node->dump();
+          // last_meta_node->dump();
         }
       }
     }
 
-    return split_points;
+    // TODO(greg): add annotations to split points
+    // return split_points;
+    return split_complete;
   }
 
-  std::ostream &operator<<(std::ostream &os, const SESENode &node)
+  // std::ostream &SESENode::recursivePrint(std::ostream &os) const
+  std::ostream &SESENode::recursivePrint(std::ostream &os) const
   {
-    if ( !node.is_leaf )
+    os << this << "\n";
+    if ( !is_leaf )
     {
-      if ( !node.parent )
-        os << "** Root node **\n";
+      for ( auto child : children)
+        child->recursivePrint( os );
+    }
+
+    return os;
+    // return;
+  }
+
+  std::ostream &operator<<(std::ostream &os, const SESENode *node)
+  {
+    if ( !node->is_leaf )
+    {
+      if ( !node->parent )
+        os << "\033[1;31m** Root node **\033[0m\n";
       else
-        os << "-- Intermediate node --\n";
+        os << "\033[36m-- Intermediate node --\033[0m\n";
     }
     else
-      os << "++ Leaf node ++\n";
-
-    os << "\tAnnotations\n";
-    for ( auto &annot : node.annotations )
     {
-      os << annot.first << " : " << annot.second << "\n";
+      os << "\033[32m++ Leaf node ++\033[0m\n";
+      os << "\tFirst instruction:\n";
+      llvm::errs() << "\t\t" << *(node->instructions[0]) << "\n";
     }
+
+    os << "\tAnnotations:\n";
+    os << "\t\tInherited:\n";
+    for ( auto &annot : node->inherited_annotations )
+      os << "\t\t\t" << annot.first << " : " << annot.second << "\n";
+
+    os << "\t\tUninherited:\n";
+    for ( auto &annot : node->annotations )
+      os << "\t\t\t" << annot.first << " : " << annot.second << "\n";
 
     return os;
   }
