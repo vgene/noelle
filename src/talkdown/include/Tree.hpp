@@ -22,6 +22,8 @@ namespace llvm {
 
       friend std::ostream &operator<<(std::ostream &, const FunctionTree &);
 
+      void print();
+
     private:
 
       /*
@@ -39,10 +41,12 @@ namespace llvm {
        */
       bool splitNodesRecursive(SESENode *node);
 
+#if 0
       /*
        * Split basic block when annotation changes
        */
       bool insertSplits();
+#endif
   };
 
 } // namespace llvm

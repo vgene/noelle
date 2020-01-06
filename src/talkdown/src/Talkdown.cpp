@@ -3,6 +3,7 @@
 #include "Talkdown.hpp"
 #include "Node.hpp"
 
+#include <iostream>
 #include <map>
 #include <string>
 
@@ -13,6 +14,18 @@ namespace llvm
 
   bool Talkdown::runOnModule(Module &M)
   {
+    // std::cerr << "Before initialization\n";
+    // doInitialization( M );
+    // std::cerr << "After initialization\n";
+    std::cerr << "Should be initialized\n";
+
+    std::cerr << "There are " << function_trees.size() << " function trees\n";
+
+    for ( auto &tree : function_trees )
+    {
+      std::cerr << tree;
+    }
+
     return false;
   }
 
@@ -24,8 +37,10 @@ namespace llvm
   bool Talkdown::doInitialization(Module &M)
   {
     bool modified = false;
+    std::cerr << "Functions in module:\n";
     for ( auto &f : M )
     {
+      std::cerr << "\t" << f.getName().str() << "\n";
       FunctionTree tree = FunctionTree( &f );
       modified |= tree.constructTree( &f );
       function_trees.push_back( tree );

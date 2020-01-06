@@ -20,6 +20,7 @@ namespace llvm {
    */
   struct SESENode
   {
+    typedef std::unordered_map<std::string, std::string> Annotations;
     public:
       // NOTE(greg): Currently only using SESE
       enum class NodeType { LOOP, SESE };
@@ -32,14 +33,19 @@ namespace llvm {
       void addChild(SESENode *);
       void addInstruction(Instruction *);
       void clearInstructions();
-      void setAnnotation(std::pair<std::string, std::string>);
+      void addAnnotation(std::pair<std::string, std::string>);
+      void addAnnotations(std::unordered_map<std::string, std::string>);
       std::vector<SESENode *> getChildren();
       std::vector<Instruction *> getInstructions();
-      std::unordered_map<std::string, std::string> &getAnnotation( void );
+      const std::unordered_map<std::string, std::string> &getAnnotation() const;
 
-      std::vector<Instruction *> findSplitPoints();
+      bool isLeaf() const;
 
-      friend std::ostream &operator<<(std::ostream &, const SESENode &);
+      const std::vector<std::pair<Instruction *, Annotations> > findSplitPoints() const;
+
+      std::ostream &recursivePrint(std::ostream &) const;
+
+      friend std::ostream &operator<<(std::ostream &, const SESENode *);
 
     private:
       bool is_leaf;
@@ -67,6 +73,12 @@ namespace llvm {
        * NOTE(greg): do we need a notion of priority?
        */
       std::unordered_map<std::string, std::string> annotations;
+
+      /*
+       * Annotations inherited from parent node(s)
+       * Note that this->annotations is a superset of this field
+       */
+      std::unordered_map<std::string, std::string> inherited_annotations;
 
       /*
        * NOTE(greg): might be useless later on. May be nullptr.
