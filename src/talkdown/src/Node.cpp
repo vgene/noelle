@@ -44,6 +44,11 @@ namespace llvm
     depth = d;
   }
 
+  int SESENode::getDepth()
+  {
+    return depth;
+  }
+
   void SESENode::addChild(SESENode *node)
   {
     this->is_leaf = false;
@@ -90,15 +95,41 @@ namespace llvm
     return is_leaf;
   }
 
+  void SESENode::addAnnotationsFromBasicBlock()
+  {
+    Annotations annotations_to_add = {};
+    MDNode *meta;
+    for ( auto &inst : *basic_block )
+    {
+      llvm::errs() << "-- " << inst << " --\n";
+      meta = inst.getMetadata("note.noelle");
+      if ( meta != nullptr )
+      {
+        for ( auto &pair_operand : meta->operands() )
+        {
+          llvm::errs() << "\t";
+          auto *pair = dyn_cast<MDNode>(pair_operand.get());
+          pair->print( llvm::errs(), basic_block->getModule() );
+          auto *key = dyn_cast<MDString>(pair->getOperand(0));
+          auto *value = dyn_cast<MDString>(pair->getOperand(1));
+          // annotations_to_add.emplace( key, value );
+          llvm::errs() << " --> " << key->getString().str() << " : " << value->getString().str() << "\n";
+        }
+      }
+    }
+  }
+
   std::unordered_map<std::string, std::string> parse_metadata(MDNode *meta_node)
   {
     std::unordered_map<std::string, std::string> annotation_result = {};
+    std::cerr << "Parsing metadata:\n";
     for ( auto &pair_operand : meta_node->operands() )
     {
       auto *pair   = dyn_cast<MDNode>(pair_operand.get());
       auto *key    = dyn_cast<MDString>(pair->getOperand(0));
       auto *value  = dyn_cast<MDString>(pair->getOperand(1));
-      annotation_result.emplace(key->getString(), value->getString());
+      annotation_result.emplace(key->getString().str(), value->getString().str());
+      std::cerr << "\t" << key->getString().str() << " : " << value->getString().str() << "\n";
     }
 
     return annotation_result;
@@ -108,7 +139,6 @@ namespace llvm
   {
     MDNode *last_meta_node = nullptr;
     bool has_meta = false;
-    std::vector<Instruction *> split_points;
     std::vector<std::pair<Instruction *, Annotations> > split_complete;
     for ( auto &inst : *basic_block )
     {
@@ -121,11 +151,11 @@ namespace llvm
         // not first or last instruction in basic block
         if ( &inst != &*basic_block->begin() && &inst != &*std::prev(basic_block->end()) )
         {
-          split_points.push_back( &inst );
           std::unordered_map<std::string, std::string> current_annot = parse_metadata( inst.getMetadata("note.noelle") );
+          llvm::errs() << "Splitting block " << basic_block->getName() << " at instruction " << inst << "\n";
           std::cerr << "Adding these noelle notes to split:\n";
           for ( auto it : current_annot )
-            std::cerr << it.first << " : " << it.second << "\n";
+            std::cerr << "\t" << it.first << " : " << it.second << "\n";
           split_complete.push_back( std::pair<Instruction *, Annotations>(&inst, current_annot) );
         }
 
@@ -138,7 +168,6 @@ namespace llvm
     }
 
     // TODO(greg): add annotations to split points
-    // return split_points;
     return split_complete;
   }
 
@@ -182,6 +211,16 @@ namespace llvm
       os << "\t\t\t" << annot.first << " : " << annot.second << "\n";
 
     return os;
+  }
+
+  bool SESENode::basicBlockSameMetadata(BasicBlock *bb)
+  {
+    MDNode *meta;
+
+    for ( auto &i : *bb )
+    {
+      // meta;
+    }
   }
 
 } // namespace llvm

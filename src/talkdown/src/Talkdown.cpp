@@ -11,15 +11,30 @@ using namespace llvm;
 
 namespace llvm
 {
+/*
+ * Options for talkdown
+ */
+static cl::opt<bool> TalkdownDisable("noelle-talkdown-disable", cl::ZeroOrMore, cl::Hidden, cl::desc("Disable Talkdown"));
 
   bool Talkdown::runOnModule(Module &M)
   {
-    // std::cerr << "Before initialization\n";
-    // doInitialization( M );
-    // std::cerr << "After initialization\n";
-    std::cerr << "Should be initialized\n";
+    if ( !this->enabled )
+      return false;
 
+    bool modified = false;
+    std::cerr << "Functions in module:\n";
+    for ( auto &f : M )
+    {
+      std::cerr << "\t" << f.getName().str() << "\n";
+      FunctionTree tree = FunctionTree( &f );
+      modified |= tree.constructTree( &f );
+      function_trees.push_back( tree );
+    }
+
+    std::cerr << "Should be initialized\n";
     std::cerr << "There are " << function_trees.size() << " function trees\n";
+
+    return modified;
 
     for ( auto &tree : function_trees )
     {
@@ -36,17 +51,8 @@ namespace llvm
 
   bool Talkdown::doInitialization(Module &M)
   {
-    bool modified = false;
-    std::cerr << "Functions in module:\n";
-    for ( auto &f : M )
-    {
-      std::cerr << "\t" << f.getName().str() << "\n";
-      FunctionTree tree = FunctionTree( &f );
-      modified |= tree.constructTree( &f );
-      function_trees.push_back( tree );
-    }
-
-    return modified;
+		this->enabled = (TalkdownDisable.getNumOccurrences() == 0);
+      return false;
   }
 
   SESENode *Talkdown::getInnermostRegion(Instruction *inst)

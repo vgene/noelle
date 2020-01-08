@@ -29,11 +29,7 @@ bool FunctionTree::splitNodesRecursive(SESENode *node)
 {
   for ( auto child : node->getChildren() )
   {
-    // std::vector<Instruction *> split_points = child->findSplitPoints();
     auto split_points = child->findSplitPoints();
-    /* std::cerr << "Split points for " << node << ":\n"; */
-    /* for ( auto &it : split_points ) */
-    /*   std::cerr << "\t" << *(it.first) << "\n"; */
 
     if ( split_points.size() == 0 )
       continue;
@@ -51,7 +47,8 @@ bool FunctionTree::splitNodesRecursive(SESENode *node)
         added_node->addInstruction( *current_inst );
         current_inst++;
       }
-      child->addAnnotations(split.second);
+      added_node->setDepth( child->getDepth() + 1 );
+      added_node->addAnnotations( split.second ); // XXX(greg): Adding to the wrong node (I think)
       child->addChild( added_node );
     }
 
@@ -91,16 +88,18 @@ bool FunctionTree::constructTree(Function *f)
   root->setParent( nullptr );
 
   // add all basic blocks as children of root
+  // add metadata that applies to all instructions of a basic block to each node
   for ( auto &bb : *associated_function )
   {
     SESENode *node = new SESENode( &bb );
+    node->addAnnotationsFromBasicBlock();
     node->setParent( root );
     node->setDepth( 1 );
     root->addChild( node );
   }
 
   // split children nodes recursively until all annotations are split
-  splitNodesRecursive( root );
+  // splitNodesRecursive( root ); // XXX(greg): add this back
 
   return modified;
 }

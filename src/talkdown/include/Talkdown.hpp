@@ -28,6 +28,8 @@ namespace llvm
       std::map<std::string, std::string> &getMetadata(SESENode *); // common metadata
 
     private:
+      bool enabled;
+
       std::vector<FunctionTree> function_trees;
   };
 } // namespace llvm

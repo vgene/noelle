@@ -30,6 +30,7 @@ namespace llvm {
 
       void setParent(SESENode *);
       void setDepth(int);
+      int  getDepth();
       void addChild(SESENode *);
       void addInstruction(Instruction *);
       void clearInstructions();
@@ -38,6 +39,7 @@ namespace llvm {
       std::vector<SESENode *> getChildren();
       std::vector<Instruction *> getInstructions();
       const std::unordered_map<std::string, std::string> &getAnnotation() const;
+      void addAnnotationsFromBasicBlock();
 
       bool isLeaf() const;
 
@@ -48,6 +50,9 @@ namespace llvm {
       friend std::ostream &operator<<(std::ostream &, const SESENode *);
 
     private:
+      /*
+       * Is this node a leaf node
+       */
       bool is_leaf;
 
       /*
@@ -84,6 +89,8 @@ namespace llvm {
        * NOTE(greg): might be useless later on. May be nullptr.
        */
       BasicBlock *basic_block;
+
+      bool basicBlockSameMetadata(BasicBlock *);
   };
 
   /*

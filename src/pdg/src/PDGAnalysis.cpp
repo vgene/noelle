@@ -32,7 +32,7 @@ void llvm::PDGAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<ScalarEvolutionWrapperPass>();
   AU.addRequired<CallGraphWrapperPass>();
   AU.addRequired<AllocAA>();
-  AU.addRequired<Talkdown>();
+  /* AU.addRequired<Talkdown>(); */
   AU.addRequired<WPAPass>();
   AU.setPreservesAll();
   return ;
@@ -41,7 +41,7 @@ void llvm::PDGAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 bool llvm::PDGAnalysis::runOnModule (Module &M){
   this->M = &M;
   this->wpa = &getAnalysis<WPAPass>();
-  this->talkdown = &getAnalysis<Talkdown>();
+  /* this->talkdown = &getAnalysis<Talkdown>(); */
   return false;
 }
 
@@ -173,13 +173,13 @@ void llvm::PDGAnalysis::constructEdgesFromUseDefs (PDG *pdg){
 
 bool llvm::PDGAnalysis::isInIndependentRegion(Instruction *memI, Instruction *memJ)
 {
-  return false; // NOTE(greg): these functions aren't implemented yet
-  auto rI = talkdown->getInnermostRegion(memI);
-  auto rJ = talkdown->getInnermostRegion(memJ);
-  auto common = talkdown->getInnermostCommonAncestor(rI, rJ);
-  auto &metadata = talkdown->getMetadata(common);
+  return true; // NOTE(greg): these functions aren't implemented yet
+  /* auto rI = talkdown->getInnermostRegion(memI); */
+  /* auto rJ = talkdown->getInnermostRegion(memJ); */
+  /* auto common = talkdown->getInnermostCommonAncestor(rI, rJ); */
+  /* auto &metadata = talkdown->getMetadata(common); */
 
-  return (metadata["independent"] == "1");
+  /* return (metadata["independent"] == "1"); */
 }
 
 template <class InstI, class InstJ>
