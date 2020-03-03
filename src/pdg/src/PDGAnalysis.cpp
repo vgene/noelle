@@ -32,7 +32,7 @@ void llvm::PDGAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<ScalarEvolutionWrapperPass>();
   AU.addRequired<CallGraphWrapperPass>();
   AU.addRequired<AllocAA>();
-  /* AU.addRequired<Talkdown>(); */
+  AU.addRequired<Talkdown>();
   AU.addRequired<WPAPass>();
   AU.setPreservesAll();
   return ;
@@ -41,7 +41,7 @@ void llvm::PDGAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 bool llvm::PDGAnalysis::runOnModule (Module &M){
   this->M = &M;
   this->wpa = &getAnalysis<WPAPass>();
-  /* this->talkdown = &getAnalysis<Talkdown>(); */
+  this->talkdown = &getAnalysis<Talkdown>();
   return false;
 }
 

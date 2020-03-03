@@ -4,6 +4,8 @@
 
 #include "Node.hpp"
 
+#include <string>
+
 using namespace llvm;
 
 namespace llvm {
@@ -23,6 +25,7 @@ namespace llvm {
       friend std::ostream &operator<<(std::ostream &, const FunctionTree &);
 
       void print();
+      void writeDotFile( const std::string filename );
 
     private:
 
@@ -40,6 +43,11 @@ namespace llvm {
        * Split nodes of tree recursively
        */
       bool splitNodesRecursive(SESENode *node);
+
+      /*
+       * NOTE(gc14): Maps instructions to its appropriate SESENode
+       */
+      std::unordered_map<Instruction *, SESENode *> inst_node_map;
 
 #if 0
       /*

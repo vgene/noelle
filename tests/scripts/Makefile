@@ -1,6 +1,7 @@
 # Commands
 CC=clang
-CPP=clang++
+# CPP=clang++
+CPP=/u/gc14/clang_openmp/llvm/scripts/automp
 OPT=opt
 
 # Libraries
@@ -12,7 +13,8 @@ RUNTIME_CFLAGS="-DDEBUG"
 #RUNTIME_CFLAGS="$(RUNTIME_CFLAGS) -DRUNTIME_PRINT"
 
 # Other parallelization options:
-PARALLELIZATION_OPTIONS=-alloc-aa-verbose=1 -noelle-pdg-verbose=1 -noelle-verbose=2 -dswp-force -noelle-min-hot=0
+# PARALLELIZATION_OPTIONS=-alloc-aa-verbose=1 -noelle-pdg-verbose=1 -noelle-verbose=2 -dswp-force -noelle-min-hot=0
+PARALLELIZATION_OPTIONS=-alloc-aa-verbose=1 -noelle-pdg-verbose=1 -dswp-force -noelle-min-hot=0
 OPT_LEVEL=-O3
 
 INCLUDES=-I../../include/threadpool/include
@@ -35,6 +37,7 @@ all: baseline testseq $(OPTIMIZED)
 %.bc: %.cpp
 	$(CPP) $(INCLUDES) -std=c++14 -emit-llvm -O0 -Xclang -disable-O0-optnone -c $< -o $@
 	noelle-norm $@ -o $@
+	# $(OPT) -break-crit-edges $@ -o $@
 	$(OPT) -dot-cfg -disable-output $@
 	llvm-dis $@
 
@@ -52,6 +55,11 @@ $(OPTIMIZED): test_dswp.bc
 
 test_pdgdot.bc: test_seq.bc
 	$(OPT) $(PRINTPASSES) $(ANALYSES) -heuristics -PDGPrinter $^ -o $@
+
+test_talkdown.bc: test.bc
+	date > talkdown.dump
+	# noelle-load -Talkdown $< -o $@ 2>>talkdown.dump
+	noelle-load -Talkdown -debug-only=talkdown $< -o $@
 
 test_dswp_unoptimized.bc: test_seq.bc output.prof
 	noelle-pgo output.prof $(PARALLELIZATION_OPTIONS) $< -o $@

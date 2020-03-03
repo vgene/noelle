@@ -20,7 +20,7 @@ namespace llvm
 
       bool doInitialization(Module &M);
       bool runOnModule(Module &M);
-      void getAnalysisUsage(AnalysisUsage &AU);
+      void getAnalysisUsage(AnalysisUsage &AU) const;
 
       SESENode *getInnermostRegion(Instruction *);
       SESENode *getParent(SESENode *);

@@ -28,9 +28,10 @@ namespace llvm {
       SESENode();
       SESENode(BasicBlock *);
 
-      void setParent(SESENode *);
-      void setDepth(int);
-      int  getDepth();
+      void setParent(SESENode *p);
+      SESENode *getParent() { return parent; }
+      void setDepth(int d) { depth = d; }
+      int  getDepth() { return depth; }
       void addChild(SESENode *);
       void addInstruction(Instruction *);
       void clearInstructions();
@@ -60,6 +61,14 @@ namespace llvm {
        */
       int depth;
 
+      /*
+       * Number of instructions in node
+       */
+      int num_instructions;
+
+      /*
+       * Parent node
+       */
       SESENode *parent;
 
       /*

@@ -15,14 +15,62 @@ FunctionTree::FunctionTree()
   root = nullptr;
 }
 
+FunctionTree::FunctionTree(Function *f) : FunctionTree()
+{
+  associated_function = f;
+}
+
 FunctionTree::~FunctionTree()
 {
 
 }
 
-FunctionTree::FunctionTree(Function *f) : FunctionTree()
+SESENode *FunctionTree::getInnermostNode(Instruction *inst)
 {
-  associated_function = f;
+
+}
+
+SESENode *FunctionTree::getParent(SESENode *node)
+{
+  return node->getParent();
+}
+
+SESENode *FunctionTree::getFirstCommonAncestor(SESENode *n1, SESENode *n2)
+{
+  SESENode *deeper;
+  SESENode *shallower;
+
+  // if same node, return one of them
+  if ( n1 == n2 )
+    return n1;
+
+  // find which node is deeper in the tree
+  if ( n1->getDepth() > n2->getDepth() )
+  {
+    deeper = n1;
+    shallower = n2;
+  }
+  else
+  {
+    deeper = n2;
+    shallower = n1;
+  }
+
+  // get the two search nodes to the same depth
+  while ( shallower->getDepth() != deeper->getDepth() )
+    deeper = deeper->getParent();
+
+  while ( deeper != root )
+  {
+    if ( deeper == shallower )
+      return deeper;
+
+    deeper = deeper->getParent();
+    shallower = shallower->getParent();
+  }
+
+  // if we get to root, then there was no common ancestor
+  return nullptr;
 }
 
 bool FunctionTree::splitNodesRecursive(SESENode *node)
@@ -65,8 +113,8 @@ bool FunctionTree::splitNodesRecursive(SESENode *node)
     child->clearInstructions();
 
     // call the recursive function here??
-    for ( auto childchild : child->getChildren() )
-      splitNodesRecursive( childchild );
+    /* for ( auto childchild : child->getChildren() ) */
+    /*   splitNodesRecursive( childchild ); */
   }
 
   return false;
@@ -76,15 +124,11 @@ bool FunctionTree::constructTree(Function *f)
 {
   bool modified = false;
 
-  // if we are using instructions instead of basic blocks as regions
-  // then this wont work...
-  // modified |= insertSplits();
-
   // construct root node
   // TODO(greg): with annotation of function if there is one
   this->root = new SESENode();
   root->setDepth( 0 );
-  root->addAnnotation(std::pair<std::string, std::string>("Root", ""));
+  root->addAnnotation(std::pair<std::string, std::string>("Root", "Default"));
   root->setParent( nullptr );
 
   // add all basic blocks as children of root
@@ -98,10 +142,21 @@ bool FunctionTree::constructTree(Function *f)
     root->addChild( node );
   }
 
+  return false;
+
+
+  root->clearInstructions();
+  // TODO(greg): Need to add instructions to the hash map
+
   // split children nodes recursively until all annotations are split
   // splitNodesRecursive( root ); // XXX(greg): add this back
 
   return modified;
+}
+
+void FunctionTree::writeDotFile( const std::string filename )
+{
+  // NOTE(greg): Use GraphWriter to print out the tree better
 }
 
 std::ostream &operator<<(std::ostream &os, const FunctionTree &tree)

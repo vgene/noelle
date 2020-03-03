@@ -3,6 +3,10 @@
 #include <map>
 #include <unordered_map>
 
+#include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "talkdown"
+
 using namespace llvm;
 
 namespace llvm
@@ -10,7 +14,7 @@ namespace llvm
 
   SESENode::SESENode()
   {
-    is_leaf = true;
+    is_leaf = false;
     depth = -1;
 
     parent = nullptr;
@@ -23,10 +27,23 @@ namespace llvm
   SESENode::SESENode(BasicBlock *bb) : SESENode()
   {
     basic_block = bb;
+    is_leaf = true;
 
     // do we want to do this here or split it as a separate function?
     for ( auto &inst : *bb )
+    {
+      LLVM_DEBUG(
+        llvm::errs() << "Inserting inst (" << *&inst << ") to ";
+        if ( bb->hasName() )
+          llvm::errs() << bb->getName().str() << "\n";
+        else
+        {
+          bb->printAsOperand( llvm::errs(), false, bb->getParent()->getParent() );
+          llvm::errs() << "\n";
+        }
+      );
       instructions.push_back( &inst );
+    }
   }
 
   void SESENode::setParent(SESENode *node)
@@ -37,16 +54,6 @@ namespace llvm
     if ( node != nullptr)
       inherited_annotations = parent->getAnnotation();
     // annotations.insert(inherited_annotations.begin(), inherited_annotations.end());
-  }
-
-  void SESENode::setDepth(int d)
-  {
-    depth = d;
-  }
-
-  int SESENode::getDepth()
-  {
-    return depth;
   }
 
   void SESENode::addChild(SESENode *node)
@@ -101,19 +108,19 @@ namespace llvm
     MDNode *meta;
     for ( auto &inst : *basic_block )
     {
-      llvm::errs() << "-- " << inst << " --\n";
+      /* llvm::errs() << "-- " << inst << " --\n"; */
       meta = inst.getMetadata("note.noelle");
       if ( meta != nullptr )
       {
         for ( auto &pair_operand : meta->operands() )
         {
-          llvm::errs() << "\t";
+          /* llvm::errs() << "\t"; */
           auto *pair = dyn_cast<MDNode>(pair_operand.get());
           pair->print( llvm::errs(), basic_block->getModule() );
           auto *key = dyn_cast<MDString>(pair->getOperand(0));
           auto *value = dyn_cast<MDString>(pair->getOperand(1));
           // annotations_to_add.emplace( key, value );
-          llvm::errs() << " --> " << key->getString().str() << " : " << value->getString().str() << "\n";
+          /* llvm::errs() << " --> " << key->getString().str() << " : " << value->getString().str() << "\n"; */
         }
       }
     }
@@ -122,7 +129,6 @@ namespace llvm
   std::unordered_map<std::string, std::string> parse_metadata(MDNode *meta_node)
   {
     std::unordered_map<std::string, std::string> annotation_result = {};
-    std::cerr << "Parsing metadata:\n";
     for ( auto &pair_operand : meta_node->operands() )
     {
       auto *pair   = dyn_cast<MDNode>(pair_operand.get());
@@ -154,8 +160,8 @@ namespace llvm
           std::unordered_map<std::string, std::string> current_annot = parse_metadata( inst.getMetadata("note.noelle") );
           llvm::errs() << "Splitting block " << basic_block->getName() << " at instruction " << inst << "\n";
           std::cerr << "Adding these noelle notes to split:\n";
-          for ( auto it : current_annot )
-            std::cerr << "\t" << it.first << " : " << it.second << "\n";
+          /* for ( auto it : current_annot ) */
+          /*   std::cerr << "\t" << it.first << " : " << it.second << "\n"; */
           split_complete.push_back( std::pair<Instruction *, Annotations>(&inst, current_annot) );
         }
 
@@ -198,6 +204,7 @@ namespace llvm
     {
       os << "\033[32m++ Leaf node ++\033[0m\n";
       os << "\tFirst instruction:\n";
+      assert(node->instructions.size() > 0);
       llvm::errs() << "\t\t" << *(node->instructions[0]) << "\n";
     }
 

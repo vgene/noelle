@@ -25,16 +25,16 @@ static cl::opt<bool> TalkdownDisable("noelle-talkdown-disable", cl::ZeroOrMore, 
     std::cerr << "Functions in module:\n";
     for ( auto &f : M )
     {
+      if ( f.isDeclaration() )
+        continue;
       std::cerr << "\t" << f.getName().str() << "\n";
       FunctionTree tree = FunctionTree( &f );
       modified |= tree.constructTree( &f );
       function_trees.push_back( tree );
     }
 
-    std::cerr << "Should be initialized\n";
-    std::cerr << "There are " << function_trees.size() << " function trees\n";
-
-    return modified;
+    /* std::cerr << "Should be initialized\n"; */
+    /* std::cerr << "There are " << function_trees.size() << " function trees\n"; */
 
     for ( auto &tree : function_trees )
     {
@@ -44,7 +44,7 @@ static cl::opt<bool> TalkdownDisable("noelle-talkdown-disable", cl::ZeroOrMore, 
     return false;
   }
 
-  void Talkdown::getAnalysisUsage(AnalysisUsage &AU)
+  void Talkdown::getAnalysisUsage(AnalysisUsage &AU) const
   {
     AU.setPreservesAll();
   }
