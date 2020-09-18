@@ -15,17 +15,22 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FileSystem.h"
 
 #include "Comparators.hpp"
 
 #include <vector>
+#include <regex>
+#include <string>
 
 using namespace llvm;
 using namespace std;
 
 namespace parallelizertests {
 
-  typedef Values (*TestFunction)(ModulePass &);
+  class TestSuite;
+
+  typedef Values (*TestFunction)(ModulePass &, TestSuite &);
 
   class TestSuite {
    public:
@@ -45,11 +50,22 @@ namespace parallelizertests {
       std::string actualValuesFileName
     );
 
+    ~TestSuite() ;
+
     void runTests (ModulePass &pass) ;
 
-    void checkTest (int testId, Values &expectedValues) ;
+    bool checkTest (int testId, Values &expectedValues, raw_fd_ostream &File) ;
+    std::string addSpacesBetweenDelimiters (std::string delimitedValues) ;
     template <typename T> std::string printToString (T *printable) ;
     template <typename T> std::string printAsOperandToString (T *printable) ;
+
+    std::string valueToString (Value *value) ;
+    std::string trimProfilerBitcodeInfo (std::string bitcodeValue) ;
+
+    std::string combineOrderedValues (std::vector<std::string> values) ;
+    std::string combineUnorderedValues (std::vector<std::string> values) ;
+
+    static std::string combineValues (std::vector<std::string> values, std::string delimiter) ;
 
     const std::string orderedValueDelimiter = ";";
     const std::string unorderedValueDelimiter = "|";
@@ -97,4 +113,5 @@ namespace parallelizertests {
     Parser::trim(str);
     return str;
   }
+
 }

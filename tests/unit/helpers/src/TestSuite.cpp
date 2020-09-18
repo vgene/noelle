@@ -11,69 +11,136 @@
 
 #include "TestSuite.hpp"
 
-using namespace parallelizertests;
+namespace parallelizertests {
 
 TestSuite::TestSuite (
   std::string suite,
   const char *names[],
   TestFunction fns[],
   int numTests,
-  std::string actualValuesFileName
+  std::string expectedValuesFileName
 ) : suiteName{suite} {
   for (auto i = 0; i < numTests; ++i) {
     this->testNames.push_back(std::string(names[i]));
     this->tests.push_back(fns[i]);
   }
-  this->comparator = new FileComparator(actualValuesFileName, unorderedValueDelimiter, orderedValueDelimiter);
+  this->comparator = new FileComparator(expectedValuesFileName, unorderedValueDelimiter, orderedValueDelimiter);
+
 }
 
 TestSuite::TestSuite (
   std::string suite,
   std::vector<std::string> names,
   std::vector<TestFunction> testFns,
-  std::string actualValuesFileName
+  std::string expectedValuesFileName
 ) : suiteName{suite}, testNames{names}, tests{testFns} {
-  this->comparator = new FileComparator(actualValuesFileName);
+  this->comparator = new FileComparator(expectedValuesFileName);
+
 }
 
+TestSuite::~TestSuite() {}
+
 void TestSuite::runTests (ModulePass &pass) {
+  std::error_code EC;
+  raw_fd_ostream File("test_output.txt", EC);
+  if (EC) {
+    errs() << "Could not open output file!\n";
+    return ;
+  }
+
   Values groups(testNames.begin(), testNames.end());
   std::pair<Values, Values>
   mismatchGroups = comparator->nonIntersectingGroups(groups);
   if (mismatchGroups.second.size() != 0) {
     for (auto group : mismatchGroups.second) {
-      errs() << suiteName << ": Test not found: " << group << "\n";
+      File << suiteName << ": Test not found: " << group << "\n";
     }
     return;
   }
 
   for (auto group : mismatchGroups.first) {
-    errs() << suiteName << ": Not Testing: " << group << "\n";
+    File << suiteName << ": Not Testing: " << group << "\n";
   }
 
+  int numSuccess = 0;
+  int numSkips = 0;
   for (auto testId = 0; testId < tests.size(); ++testId) {
     std::string testName(testNames[testId]);
-    if (mismatchGroups.first.find(testName) != mismatchGroups.first.end()) continue;
-    Values expected = tests[testId](pass);
-    checkTest(testId, expected);
+    if (mismatchGroups.first.find(testName) != mismatchGroups.first.end()) {
+      numSkips++;
+      continue;
+    }
+
+    Values actual = tests[testId](pass, *this);
+    numSuccess += checkTest(testId, actual, File) ? 1 : 0;
   }
+
+  File << suiteName << " Summary: Successes: " << numSuccess
+    << " Skips: " << numSkips
+    << " Failures: " << (tests.size() - numSuccess - numSkips) << "\n";
+
+  File.close();
 }
 
-void TestSuite::checkTest (int testId, Values &expectedValues) {
+bool TestSuite::checkTest (int testId, Values &actualValues, raw_fd_ostream &File) {
   std::pair<Values, Values>
-  mismatchValues = comparator->nonIntersectingOfGroup(testNames[testId], expectedValues);
+  mismatchValues = comparator->nonIntersectingOfGroup(testNames[testId], actualValues);
 
-  errs() << "\n";
   bool testPassed = true;
-  for (auto v : mismatchValues.first) {
-    testPassed = false;
-    errs() << suiteName << ": Expected: " << v << " not found.\n";
-  }
   for (auto v : mismatchValues.second) {
     testPassed = false;
-    errs() << suiteName << ": Not expected: " << v << " yet found\n";
+    File << suiteName << ": Expected    : " << addSpacesBetweenDelimiters(v) << " not found.\n";
+  }
+  for (auto v : mismatchValues.first) {
+    testPassed = false;
+    File << suiteName << ": Not expected: " << addSpacesBetweenDelimiters(v) << " yet found\n";
   }
 
-  if (testPassed) errs() << suiteName << ": Passed: " << testNames[testId] << "\n";
-  else errs() << suiteName << ": Failed: " << testNames[testId] << "\n";
+  if (testPassed) File << suiteName << ": Passed: " << testNames[testId] << "\n";
+  else File << suiteName << ": Failed: " << testNames[testId] << "\n";
+
+  return testPassed;
+}
+
+std::string TestSuite::addSpacesBetweenDelimiters (std::string delimitedValues) {
+  std::regex delimiterRegex("\\" + orderedValueDelimiter + "|" + "\\" + unorderedValueDelimiter);
+  std::string captured = "$&";
+  std::string spacedDelimiterRegex(" $& ");
+
+  std::string spacedOutput;
+  raw_string_ostream valueStream(spacedOutput);
+  valueStream << std::regex_replace(delimitedValues, delimiterRegex, spacedDelimiterRegex);
+  valueStream.flush();
+  return spacedOutput;
+}
+
+std::string TestSuite::valueToString (Value *value) {
+  return trimProfilerBitcodeInfo(printToString(value));
+}
+
+std::string TestSuite::trimProfilerBitcodeInfo (std::string bitcodeValue) {
+  auto it = bitcodeValue.find(", !prof");
+  if (it != std::string::npos) {
+    bitcodeValue.erase(bitcodeValue.begin() + it, bitcodeValue.end());
+  }
+  return bitcodeValue;
+}
+
+std::string TestSuite::combineOrderedValues (std::vector<std::string> values) {
+  return TestSuite::combineValues(values, orderedValueDelimiter);
+}
+
+std::string TestSuite::combineUnorderedValues (std::vector<std::string> values) {
+  return TestSuite::combineValues(values, unorderedValueDelimiter);
+}
+
+std::string TestSuite::combineValues (std::vector<std::string> values, std::string delimiter) {
+  std::string allValues = values[0];
+  for (int i = 1; i < values.size(); ++i) {
+    allValues += delimiter + values[i];
+  }
+
+  return allValues;
+}
+
 }

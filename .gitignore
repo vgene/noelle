@@ -1,15 +1,21 @@
 # dependencies
 threadpool
+*compile_commands.json
+
+# build artifacts
+src/**/build
+tests/unit/**/build
 
 # test output steps
 tests/regression/**/*.bc
 tests/performance/**/*.bc
 tests/regression/**/*.ll
 tests/performance/**/*.ll
-tests/regression/**/*.txt
-tests/performance/**/*.txt
 tests/regression/**/*.dot
 tests/performance/**/*.dot
+tests/unit/**/suite/**/*_output.txt
+tests/unit/**/*.dot
+tests/**/*_prof
 
 # test output executables
 tests/regression/**/baseline

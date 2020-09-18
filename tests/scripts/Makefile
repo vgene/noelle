@@ -1,23 +1,26 @@
 # Commands
 CC=clang
-# CPP=clang++
-CPP=/u/gc14/clang_openmp/llvm/scripts/automp
+CPP=clang++
 OPT=opt
 
 # Libraries
-LIBS=-lm
+LIBS=-lm -lstdc++ -lpthread
 
 # Set the runtime flags
 RUNTIME_CFLAGS="-DDEBUG"
 #RUNTIME_CFLAGS="$(RUNTIME_CFLAGS) -DDSWP_STATS"
 #RUNTIME_CFLAGS="$(RUNTIME_CFLAGS) -DRUNTIME_PRINT"
 
-# Other parallelization options:
-# PARALLELIZATION_OPTIONS=-alloc-aa-verbose=1 -noelle-pdg-verbose=1 -noelle-verbose=2 -dswp-force -noelle-min-hot=0
-PARALLELIZATION_OPTIONS=-alloc-aa-verbose=1 -noelle-pdg-verbose=1 -dswp-force -noelle-min-hot=0
+# Parallelization options
+# 	- To dump the PDG: -noelle-pdg-dump
+PARALLELIZATION_OPTIONS=-alloc-aa-verbose=1 -noelle-parallelizer-force
+NOELLE_OPTIONS=-noelle-pdg-verbose=1 -noelle-verbose=2 -noelle-min-hot=0
 OPT_LEVEL=-O3
 
+# Front-end flags
+FRONTEND_FLAGS=-emit-llvm -O0 -Xclang -disable-O0-optnone
 INCLUDES=-I../../include/threadpool/include
+
 THREADER=Parallelizer_utils
 OPTIMIZED=parallelized
 PRINT_OUTPUT_FILE=test.txt
@@ -29,43 +32,30 @@ BC_FILES := $(notdir $(CPP_FILES:.cpp=.bc))
 all: baseline testseq $(OPTIMIZED)
 
 %.bc: %.c
-	$(CC) $(INCLUDES) -emit-llvm -O0 -Xclang -disable-O0-optnone -c $< -o $@
-	noelle-norm $@ -o $@
-	$(OPT) -dot-cfg -disable-output $@
+	$(CC) $(INCLUDES) $(FRONTEND_FLAGS) -c $< -o $@
 	llvm-dis $@
 
 %.bc: %.cpp
-	$(CPP) $(INCLUDES) -std=c++14 -emit-llvm -O0 -Xclang -disable-O0-optnone -c $< -o $@
-	noelle-norm $@ -o $@
-	# $(OPT) -break-crit-edges $@ -o $@
-	$(OPT) -dot-cfg -disable-output $@
+	$(CPP) $(INCLUDES) $(FRONTEND_FLAGS) -std=c++14 -c $< -o $@
 	llvm-dis $@
 
 baseline: baseline.bc
 	$(CPP) $(OPT_LEVEL) $^ -o $@
 
-testseq: test_seq.bc
+testseq: baseline_pre.bc
 	$(CPP) -std=c++14 -pthreads $(OPT_LEVEL) $^ $(LIBS) -o $@
 	
 $(THREADER).bc: $(THREADER).cpp
 	$(CPP) $(RUNTIME_CFLAGS) $(INCLUDES) -std=c++14 -emit-llvm $(OPT_LEVEL) -c $^ -o $@
 
-$(OPTIMIZED): test_dswp.bc
+$(OPTIMIZED): test_parallelized.bc
 	$(CPP) -std=c++14 -pthreads $(OPT_LEVEL) $^ $(LIBS) -o $@
 
-test_pdgdot.bc: test_seq.bc
-	$(OPT) $(PRINTPASSES) $(ANALYSES) -heuristics -PDGPrinter $^ -o $@
-
-test_talkdown.bc: test.bc
-	date > talkdown.dump
-	# noelle-load -Talkdown $< -o $@ 2>>talkdown.dump
-	noelle-load -Talkdown -debug-only=talkdown $< -o $@
-
-test_dswp_unoptimized.bc: test_seq.bc output.prof
-	noelle-pgo output.prof $(PARALLELIZATION_OPTIONS) $< -o $@
+test_parallelized_unoptimized.bc: baseline_with_metadata.bc
+	noelle-parallelizer $^ -o $@ $(NOELLE_OPTIONS) $(PARALLELIZATION_OPTIONS)
 	llvm-dis $@
 
-test_dswp.bc: test_dswp_unoptimized.bc
+test_parallelized.bc: test_parallelized_unoptimized.bc
 	$(CPP) $(OPT_LEVEL) -c -emit-llvm $^ -o $@
 	llvm-dis $@
 
@@ -73,22 +63,33 @@ baseline.bc: test.bc
 	$(CPP) $(OPT_LEVEL) -c -emit-llvm $^ -o $@
 	llvm-dis $@
 
-test_seq.bc: test.bc $(THREADER).bc
-	llvm-link $^ -o $@
-	noelle-pre "$@"
+baseline_with_metadata.bc: default.profraw baseline_pre.bc
+	noelle-meta-prof-embed $^ -o $@
+	noelle-meta-pdg-embed $@ -o $@
 	llvm-dis $@
 
-output.prof: default.profraw
-	llvm-profdata merge $^ -output=$@
+baseline_with_runtime.bc: test.bc $(THREADER).bc
+	llvm-link $^ -o $@
+	llvm-dis $@
 
-default.profraw: test_seq_prof input.txt
+baseline_with_runtime_prof: baseline_with_runtime.bc
+	noelle-prof-coverage $^ $@ $(LIBS)
+
+pre_profiles.profraw: baseline_with_runtime_prof input.txt
+	./$< `cat input.txt` 
+	mv default.profraw $@
+
+baseline_pre.bc: pre_profiles.profraw baseline_with_runtime.bc
+	noelle-meta-prof-embed $^ -o $@
+	noelle-pre $@ $(NOELLE_OPTIONS)
+	noelle-meta-clean $@ $@
+	llvm-dis $@
+
+default.profraw: baseline_pre_prof input.txt
 	./$< `cat input.txt` 
 
-test_seq_prof: test_seq_prof.bc
-	$(CPP) -pthreads -fprofile-instr-generate -lstdc++ $^ $(LIBS) -o $@
-
-test_seq_prof.bc: test_seq.bc
-	@../../scripts/inject_hotprofiler.sh $^ $@
+baseline_pre_prof: baseline_pre.bc
+	noelle-prof-coverage $^ $@ $(LIBS)
 
 input.txt:
 	@../../scripts/create_input.sh $@
@@ -99,13 +100,8 @@ test_correctness: input.txt baseline $(OPTIMIZED)
 	cmp output_baseline.txt output_parallelized.txt || (echo "Error $$?"; exit 1)
 	echo "Success"
 
-show_passes: test_seq.bc output.prof
-	noelle-pgo output.prof $(PARALLELIZATION_OPTIONS) $^ --debug-pass=Structure -disable-output
-
-show_time: test_seq.bc output.prof
-	noelle-pgo output.prof $(PARALLELIZATION_OPTIONS) $^ -time-passes -disable-output
-
 clean:
-	rm -f *.bc *.dot *.jpg *.ll *.S *.s *.o *.txt baseline testseq $(OPTIMIZED) *.prof *.profraw *prof .*.dot
+	rm -f *.bc *.dot *.jpg *.ll *.S *.s *.o baseline testseq $(OPTIMIZED) *.prof *.profraw *prof .*.dot
+	rm -f time_parallelized.txt compiler_output.txt input.txt ;
 
-.PHONY: show_passes show_time
+.PHONY: test_correctness clean

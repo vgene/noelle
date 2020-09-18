@@ -4,10 +4,10 @@ set(Srcs
 )
 
 # Compilation flags
-set_source_files_properties(${Srcs} PROPERTIES COMPILE_FLAGS " -std=c++14 -fPIC")
+set_source_files_properties(${Srcs} PROPERTIES COMPILE_FLAGS " -std=c++17 -fPIC")
 
 # Name of the LLVM pass
-set(PassName "UnitTester")
+set(PassName "dependence_graphs")
 
 # configure LLVM 
 find_package(LLVM REQUIRED CONFIG)
@@ -21,10 +21,9 @@ include(AddLLVM)
 
 message(STATUS "LLVM_DIR IS ${LLVM_CMAKE_DIR}.")
 
-set(PassesPath ../../../../src)
-set(UtilDep ${PassesPath}/basic_utilities/include)
-set(DGDep ${PassesPath}/alloc_aa/include ${PassesPath}/pdg/include)
-include_directories(${LLVM_INCLUDE_DIRS} ${UtilDep} ${DGDep} ../../helpers/include ../include)
+set(RootPath ../../../..)
+set(SVFDep ${RootPath}/external/svf/include)
+include_directories(${LLVM_INCLUDE_DIRS} ${RootPath}/install/include ${SVFDep} ../../helpers/include ../include ./)
 
 # Declare the LLVM pass to compile
-add_llvm_loadable_module(${PassName} ${Srcs})
+add_llvm_library(${PassName} MODULE ${Srcs})

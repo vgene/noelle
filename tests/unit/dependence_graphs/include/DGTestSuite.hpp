@@ -15,6 +15,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Instructions.h"
 
+#include "PDGPrinter.hpp"
 #include "PDG.hpp"
 #include "SCC.hpp"
 #include "SCCDAG.hpp"
@@ -46,16 +47,21 @@ namespace llvm {
       void getAnalysisUsage (AnalysisUsage &AU) const override ;
 
     private:
-      static Values pdgHasAllValuesInProgram (ModulePass &pass) ;
-      static Values pdgHasAllDGEdgesInProgram (ModulePass &pass) ;
-      static Values ldgHasOnlyValuesOfLoop (ModulePass &pass) ;
-      static Values pdgIdentifiesRootValues (ModulePass &pass) ;
-      static Values pdgIdentifiesLeafValues (ModulePass &pass) ;
-      static Values pdgIdentifiesDisconnectedValueSets (ModulePass &pass) ;
+      static Values pdgHasAllValuesInProgram (ModulePass &pass, TestSuite &suite) ;
+      static Values pdgHasAllDGEdgesInProgram (ModulePass &pass, TestSuite &suite) ;
+      static Values ldgHasOnlyValuesOfLoop (ModulePass &pass, TestSuite &suite) ;
+      static Values pdgIdentifiesRootValues (ModulePass &pass, TestSuite &suite) ;
+      static Values pdgIdentifiesLeafValues (ModulePass &pass, TestSuite &suite) ;
+      static Values pdgIdentifiesDisconnectedValueSets (ModulePass &pass, TestSuite &suite) ;
+      static Values sccdagInternalNodesOfOutermostLoop (ModulePass &pass, TestSuite &suite) ;
+      static Values sccdagExternalNodesOfOutermostLoop (ModulePass &pass, TestSuite &suite) ;
+
+      Values getSCCValues(std::set<SCC *> sccs) ;
 
       TestSuite *suite;
       Module *M;
       Function *mainF;
       PDG *fdg;
+      SCCDAG *sccdagOutermostLoop;
   };
 }

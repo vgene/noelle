@@ -32,6 +32,8 @@ const char *DGTestSuite::tests[] = {
   "pdg root values",
   "pdg leaf values",
   "pdg disjoint values",
+  "sccdag internal nodes (of outermost loop)",
+  "sccdag external nodes (of outermost loop)"
 };
 
 TestFunction DGTestSuite::testFns[] = {
@@ -41,6 +43,8 @@ TestFunction DGTestSuite::testFns[] = {
   DGTestSuite::pdgIdentifiesRootValues,
   DGTestSuite::pdgIdentifiesLeafValues,
   DGTestSuite::pdgIdentifiesDisconnectedValueSets,
+  DGTestSuite::sccdagInternalNodesOfOutermostLoop,
+  DGTestSuite::sccdagExternalNodesOfOutermostLoop
 };
 
 bool DGTestSuite::doInitialization (Module &M) {
@@ -54,6 +58,7 @@ bool DGTestSuite::doInitialization (Module &M) {
 void DGTestSuite::getAnalysisUsage (AnalysisUsage &AU) const {
   AU.addRequired<PDGAnalysis>();
   AU.addRequired<LoopInfoWrapperPass>();
+  AU.addRequired<CallGraphWrapperPass>();
 }
 
 bool DGTestSuite::runOnModule (Module &M) {
@@ -61,82 +66,126 @@ bool DGTestSuite::runOnModule (Module &M) {
 
   this->mainF = M.getFunction("main");
   this->fdg = getAnalysis<PDGAnalysis>().getFunctionPDG(*mainF);
+  auto &LI = getAnalysis<LoopInfoWrapperPass>(*mainF).getLoopInfo();
+  auto loopDG = fdg->createLoopsSubgraph(LI.getLoopsInPreorder()[0]);
+  this->sccdagOutermostLoop = new SCCDAG(loopDG);
 
+  // PDGPrinter pdgPrinter;
+  // pdgPrinter.printGraphsForFunction(*mainF, fdg, LI);
+  // SCCDAG sccdag(loopDG);
+  // fdg->print(errs() << "FDG of main:\n") << "\n";
+
+  errs() << "DGTestSuite: Running tests\n";
   suite->runTests((ModulePass &)*this);
 
   return false;
 }
 
 // Produce expected Values; don't actually expose checkTest
-Values DGTestSuite::pdgHasAllValuesInProgram (ModulePass &pass) {
+Values DGTestSuite::pdgHasAllValuesInProgram (ModulePass &pass, TestSuite &suite) {
   DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
   Values valueNames;
   for (auto node : dgPass.fdg->getNodes()) {
-    valueNames.insert(dgPass.suite->printToString(node->getT()));
+    valueNames.insert(suite.valueToString(node->getT()));
   }
   return valueNames;
 }
 
-Values DGTestSuite::pdgHasAllDGEdgesInProgram (ModulePass &pass) {
+Values DGTestSuite::pdgHasAllDGEdgesInProgram (ModulePass &pass, TestSuite &suite) {
   DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
   Values valueNames;
   for (auto edge : dgPass.fdg->getEdges()) {
-    std::string outName = dgPass.suite->printToString(edge->getOutgoingT());
-    std::string inName = dgPass.suite->printToString(edge->getIncomingT());
+    std::string outName = suite.valueToString(edge->getOutgoingT());
+    std::string inName = suite.valueToString(edge->getIncomingT());
     std::string type = edge->isControlDependence() ? "control" : (
       edge->isMemoryDependence() ? "memory" : "data"
     );
-    std::string delim = dgPass.suite->orderedValueDelimiter;
+    std::string delim = suite.orderedValueDelimiter;
     valueNames.insert(outName + delim + inName + delim + type);
   }
   return valueNames;
 }
 
-Values DGTestSuite::ldgHasOnlyValuesOfLoop (ModulePass &pass) {
+Values DGTestSuite::ldgHasOnlyValuesOfLoop (ModulePass &pass, TestSuite &suite) {
   DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
   auto &LI = dgPass.getAnalysis<LoopInfoWrapperPass>(*dgPass.mainF).getLoopInfo();
   auto l = LI.getLoopsInPreorder()[0];
   auto ldi = dgPass.fdg->createLoopsSubgraph(l);
   Values valueNames;
   for (auto nodePair : ldi->internalNodePairs()) {
-    valueNames.insert(dgPass.suite->printToString(nodePair.first));
+    valueNames.insert(suite.valueToString(nodePair.first));
   }
   delete ldi;
   return valueNames;
 }
 
-Values DGTestSuite::pdgIdentifiesRootValues (ModulePass &pass) {
+Values DGTestSuite::pdgIdentifiesRootValues (ModulePass &pass, TestSuite &suite) {
   DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
   Values valueNames;
   for (auto node : dgPass.fdg->getTopLevelNodes()) {
-    valueNames.insert(dgPass.suite->printToString(node->getT()));
+    valueNames.insert(suite.valueToString(node->getT()));
   }
   return valueNames;
 }
 
-Values DGTestSuite::pdgIdentifiesLeafValues (ModulePass &pass) {
+Values DGTestSuite::pdgIdentifiesLeafValues (ModulePass &pass, TestSuite &suite) {
   DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
   Values valueNames;
   for (auto node : dgPass.fdg->getLeafNodes()) {
-    valueNames.insert(dgPass.suite->printToString(node->getT()));
+    valueNames.insert(suite.valueToString(node->getT()));
   }
   return valueNames;
 }
 
-Values DGTestSuite::pdgIdentifiesDisconnectedValueSets (ModulePass &pass) {
+Values DGTestSuite::pdgIdentifiesDisconnectedValueSets (ModulePass &pass, TestSuite &suite) {
   DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
   Values valueSetNames;
   auto disjointSets = dgPass.fdg->getDisconnectedSubgraphs();
   for (auto disjointSet : disjointSets) {
     std::vector<std::string> valueNames;
     for (auto node : *disjointSet) {
-      valueNames.push_back(dgPass.suite->printToString(node->getT()));
+      valueNames.push_back(suite.valueToString(node->getT()));
     }
     std::string setName = valueNames[0];
     for (int i = 1; i < valueNames.size(); ++i) {
-      setName += dgPass.suite->unorderedValueDelimiter + valueNames[i];
+      setName += suite.unorderedValueDelimiter + valueNames[i];
     }
     valueSetNames.insert(setName);
   }
   return valueSetNames;
+}
+
+Values DGTestSuite::sccdagInternalNodesOfOutermostLoop (ModulePass &pass, TestSuite &suite) {
+  DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
+  Values valueNames;
+  std::set<SCC *> internalSCCs;
+  for (auto nodePair : dgPass.sccdagOutermostLoop->internalNodePairs()) {
+    internalSCCs.insert(nodePair.first);
+  }
+  return dgPass.getSCCValues(internalSCCs);
+}
+
+Values DGTestSuite::sccdagExternalNodesOfOutermostLoop (ModulePass &pass, TestSuite &suite) {
+  DGTestSuite &dgPass = static_cast<DGTestSuite &>(pass);
+  std::set<SCC *> externalSCCs;
+  for (auto nodePair : dgPass.sccdagOutermostLoop->externalNodePairs()) {
+    externalSCCs.insert(nodePair.first);
+  }
+  return dgPass.getSCCValues(externalSCCs);
+}
+
+Values DGTestSuite::getSCCValues(std::set<SCC *> sccs) {
+  Values sccStrings;
+  for (auto scc : sccs) {
+    std::vector<Value *> values(scc->numInternalNodes());
+    int i = 0;
+    for (auto nodePair : scc->internalNodePairs()) values[i++] = nodePair.first;
+
+    std::string valuesDelimited = suite->valueToString(values[0]);
+    for (i = 1; i < values.size(); ++i) {
+      valuesDelimited += suite->unorderedValueDelimiter + suite->valueToString(values[i]);
+    }
+    sccStrings.insert(valuesDelimited);
+  }
+  return sccStrings;
 }
