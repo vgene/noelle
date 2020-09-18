@@ -3,6 +3,8 @@ set(Srcs
   Talkdown.cpp
   Node.cpp
   Tree.cpp
+  Annotation.cpp
+  AnnotationParser.cpp
 )
 
 # Compilation flags
