@@ -92,8 +92,8 @@ namespace llvm
 
   bool Talkdown::containsAnnotation(Loop *l) const
   {
-    /* const FunctionTree &ft = findTreeForFunction( l->getHeader()->getParent() ); */
-    /* return ft.loopContainsAnnotation( l ); */
+    const FunctionTree &ft = findTreeForFunction( l->getHeader()->getParent() );
+    return ft.loopContainsAnnotation( l );
     Instruction *i = l->getHeader()->getFirstNonPHI();
     AnnotationSet as = parseAnnotationsForInst(i);
     if (!as.size())

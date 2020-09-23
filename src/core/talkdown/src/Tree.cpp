@@ -126,8 +126,9 @@ namespace AutoMP
     LoopContainerNode *ln = (LoopContainerNode *) findNodeForLoop(root, l);
     assert( ln != root && "Loop container is root???" );
     assert( ln && "No loop container node for loop???" );
-    Instruction *i = ln->getHeaderNode()->getBB()->getFirstNonPHI();
-    AnnotationSet as = parseAnnotationsForInst( i );
+    /* Instruction *i = ln->getHeaderNode()->getBB()->getFirstNonPHI(); */
+    /* AnnotationSet as = parseAnnotationsForInst( i ); */
+    AnnotationSet as = ln->getRealAnnotations();
     if ( !as.size() )
       return false;
     return true;
@@ -205,12 +206,6 @@ namespace AutoMP
     // traverse nodes in tree
     for ( auto &node : loop_nodes )
     {
-      // inherit annotations from outer loops
-      if ( node->getParent() != root )
-      {
-        // node->addAnnotations( node->getParent()->getRealAnnotations() );
-      }
-
       Node *header = node->getHeaderNode();
       assert( header && "Loop doesn't have header!" );
 
@@ -219,7 +214,16 @@ namespace AutoMP
       if ( as.size() == 0 )
         continue;
 
-      // need to check if parent of that loop has the same annotations. If so then they come from the outer loop
+      // inherit annotations from outer loops...
+      // UNLESS they contain the same annotations. That means they only apply to the outer loop
+      if ( node->getParent() != root )
+      {
+        auto parent_as = node->getParent()->getRealAnnotations();
+        if ( parent_as != as )
+          node->addAnnotations( std::move(node->getParent()->getRealAnnotations()) );
+        else
+          REPORT_DUMP(errs() << "Parent loop contains same annotation as subloop\n";);
+      }
 
       // found annotation in loop header, propagate to all direct children
       AnnotationSet new_annots;
