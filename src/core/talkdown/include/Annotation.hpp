@@ -14,17 +14,16 @@ namespace AutoMP
   class Annotation
   {
   public:
-    Annotation() { loop = nullptr, key = "", value = ""; }
-    Annotation(llvm::Loop *l, std::string k, std::string v) : loop(l), key(k), value(v) {}
+    Annotation() : Annotation(nullptr, "", "") { }
+    Annotation(llvm::Loop *l, std::string k, std::string v) : loop(l), key(k), value(v) { }
 
-    // probably unecessary
     std::string getKey() const { return key; }
     std::string getValue() const { return value; }
-    void setLoop(const llvm::Loop *l) { loop = const_cast<llvm::Loop *>(l); }
+    void setLoop(llvm::Loop *l) { loop = l; }
     llvm::Loop *getLoop() const { return loop; }
 
-    // functions that are needed by some stdlib things like unordered_map, unordered_set, etc
-    bool operator<(const Annotation &a) const { return true; } // for std::set::insert
+    // comparison operators that are needed by some stdlib things like unordered_map, unordered_set, etc
+    bool operator<(const Annotation &a) const { return true; } // don't care about order
     bool operator==(const Annotation &a) const { return !key.compare(a.key) && !value.compare(a.value) && a.getLoop() == loop; }
 
     // printing stuff

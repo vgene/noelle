@@ -32,7 +32,12 @@ namespace AutoMP
         /* errs() << "\t\t" << key->getString() << " : " << value->getString() << "\n"; */
 
         // don't care about the loop right now...
-        annots.emplace(nullptr, key->getString(), value->getString());
+        // strip possible double quotes around the key and value
+        std::string key_s = key->getString();
+        std::string value_s = value->getString();
+        key_s.erase(std::remove( key_s.begin(), key_s.end(), '\"' ), key_s.end());
+        value_s.erase(std::remove( value_s.begin(), value_s.end(), '\"' ), value_s.end());
+        annots.emplace(nullptr, key_s, value_s);
       }
     }
 

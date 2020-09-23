@@ -18,7 +18,7 @@
 #include "PDG.hpp"
 #include "AllocAA.hpp"
 #include "PDGPrinter.hpp"
-#include "TalkDown.hpp"
+#include "Talkdown.hpp"
 #include "DataFlow.hpp"
 #include "CallGraph.hpp"
 
@@ -55,7 +55,7 @@ namespace llvm {
       std::unordered_map<Function *, PDG *> functionToFDGMap;
       AllocAA *allocAA;
       std::set<Function *> CGUnderMain;
-      TalkDown *talkdown;
+      Talkdown *talkdown;
       DataFlowAnalysis dfa;
       PDGVerbosity verbose;
       bool embedPDG;
@@ -72,7 +72,7 @@ namespace llvm {
       std::unordered_set<const Function *> internalFuncs;
       std::unordered_set<const Function *> unhandledExternalFuncs;
       std::unordered_map<const Function *, std::unordered_set<const Function *>> reachableUnhandledExternalFuncs;
-      
+
       void initializeSVF(Module &M);
       void identifyFunctionsThatInvokeUnhandledLibrary(Module &M);
       void printFunctionReachabilityResult();
@@ -116,7 +116,7 @@ namespace llvm {
       void iterateInstForStore(PDG *, Function &, AAResults &, DataFlowResult *, StoreInst *);
       void iterateInstForLoad(PDG *, Function &, AAResults &, DataFlowResult *, LoadInst *);
       void iterateInstForCall(PDG *, Function &, AAResults &, DataFlowResult *, CallInst *);
-      
+
       template<class InstI, class InstJ>
       void addEdgeFromMemoryAlias(PDG *, Function &, AAResults &, InstI *, InstJ *, DataDependenceType);
       void addEdgeFromFunctionModRef(PDG *, Function &, AAResults &, CallInst *, StoreInst *, bool);
@@ -226,7 +226,7 @@ namespace llvm {
         // stdlib.h
         "rand",
         "srand",
-        
+
         // time.h
         "clock",
         "difftime",

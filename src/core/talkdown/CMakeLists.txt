@@ -14,11 +14,7 @@ add_definitions(
 -D__STDC_CONSTANT_MACROS
 )
 
-SET(CUSTOM_COMPILE_FLAGS "-fexceptions")
-SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${CUSTOM_COMPILE_FLAGS}" )
-SET( CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} ${CUSTOM_COMPILE_FLAGS}" )
 set( CMAKE_EXPORT_COMPILE_COMMANDS ON )
-
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
@@ -32,4 +28,10 @@ include(AddLLVM)
 add_subdirectory(src)
 
 # Install
-install(PROGRAMS include/Talkdown.hpp DESTINATION include)
+install(PROGRAMS
+  include/Talkdown.hpp
+  include/Node.hpp
+  include/AnnotationParser.hpp
+  include/Tree.hpp
+  include/Annotation.hpp
+  DESTINATION include)

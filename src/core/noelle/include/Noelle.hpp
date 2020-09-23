@@ -19,6 +19,7 @@
 #include "DataFlow.hpp"
 #include "Scheduler.hpp"
 #include "StayConnectedNestedLoopForest.hpp"
+#include "Talkdown.hpp"
 
 #include "MemoryAnalysisModules/LoopAA.h"
 
@@ -114,7 +115,7 @@ namespace llvm::noelle {
         ) ;
 
       void filterOutLoops (
-        StayConnectedNestedLoopForest *f, 
+        StayConnectedNestedLoopForest *f,
         std::function<bool (LoopStructure *)> filter
         ) ;
 
@@ -194,6 +195,7 @@ namespace llvm::noelle {
       CallGraph *pcg;
       PDGAnalysis *pdgAnalysis;
       liberty::LoopAA *loopAA;
+      Talkdown *talkdown;
 
       char *filterFileName;
       bool hasReadFilterFile;

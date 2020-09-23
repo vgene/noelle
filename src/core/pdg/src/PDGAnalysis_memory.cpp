@@ -5,14 +5,13 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "SystemHeaders.hpp"
 
 #include "Util/SVFModule.h"
 #include "WPA/Andersen.h"
-#include "TalkDown.hpp"
 #include "PDGPrinter.hpp"
 #include "PDGAnalysis.hpp"
 
@@ -32,7 +31,7 @@ void PDGAnalysis::iterateInstForStore (PDG *pdg, Function &F, AAResults &AA, Dat
       continue ;
     }
 
-    /* 
+    /*
      * Check loads.
      */
     if (auto load = dyn_cast<LoadInst>(I)) {
@@ -157,8 +156,8 @@ void PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &A
    * NoModRef when one says Mod and another says Ref
    */
   if (bv[0] && bv[1]) {
-    return; 
-  } 
+    return;
+  }
   if (bv[0]) {
     makeRefEdge = true;
   } else if (bv[1]) {
@@ -308,7 +307,7 @@ void PDGAnalysis::addEdgeFromFunctionModRef (PDG *pdg, Function &F, AAResults &A
      * This is due to a bug in SVF that doesn't model I/O library calls correctly.
      */
     if (  true
-          && isSafeToQueryModRefOfSVF(call, bv) 
+          && isSafeToQueryModRefOfSVF(call, bv)
           && isSafeToQueryModRefOfSVF(otherCall, bv)
       ) {
       switch (this->mssa->getMRGenerator()->getModRefInfo(call, otherCall)) {

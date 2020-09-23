@@ -4,9 +4,9 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 
-#include "Node.h"
-#include "Tree.h"
-#include "Annotation.h"
+#include "Node.hpp"
+#include "Tree.hpp"
+#include "Annotation.hpp"
 
 #include <algorithm>
 #include <map>
@@ -29,8 +29,9 @@ namespace llvm
       bool runOnModule(Module &M);
       void getAnalysisUsage(AnalysisUsage &AU) const;
 
-      const AnnotationSet &getAnnotationsForInst(const Instruction *i) const;
-      const AnnotationSet &getAnnotationsForInst(const Instruction *i, const Loop *l) const;
+      bool containsAnnotation(Loop *) const;
+      const AnnotationSet &getAnnotationsForInst(Instruction *i) const;
+      const AnnotationSet &getAnnotationsForInst(Instruction *i, Loop *l) const;
 
     private:
       bool enabled;

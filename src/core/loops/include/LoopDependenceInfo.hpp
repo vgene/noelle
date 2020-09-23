@@ -23,6 +23,7 @@
 #include "LoopEnvironment.hpp"
 #include "EnvBuilder.hpp"
 #include "Transformations.hpp"
+#include "Talkdown.hpp"
 
 #include "MemoryAnalysisModules/LoopAA.h"
 
@@ -85,6 +86,7 @@ namespace llvm {
         uint32_t maxCores,
         std::unordered_set<LoopDependenceInfoOptimization> optimizations,
         liberty::LoopAA *aa,
+        Talkdown *talkdown,
         bool enableLoopAwareDependenceAnalyses
       );
 
@@ -230,7 +232,8 @@ namespace llvm {
         PDG *functionDG,
         DominatorSummary &DS,
         ScalarEvolution &SE,
-        liberty::LoopAA *loopAA
+        liberty::LoopAA *loopAA,
+        Talkdown *talkdown
         ) ;
 
       uint64_t computeTripCounts (

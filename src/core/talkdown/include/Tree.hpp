@@ -4,9 +4,9 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/Analysis/LoopInfo.h"
 
-#include "liberty/Utilities/ModuleLoops.h"
-#include "Node.h"
-#include "Annotation.h"
+#include "Utilities/ModuleLoops.h"
+#include "Node.hpp"
+#include "Annotation.hpp"
 
 #include <string>
 
@@ -17,14 +17,12 @@ namespace AutoMP {
   {
   public:
     // constructors
-    FunctionTree() : root(nullptr), num_nodes(0) {}
-    FunctionTree(llvm::Function *f);
+    FunctionTree(llvm::Function *f) : root(nullptr), num_nodes(0), associated_function(f) { }
+    FunctionTree() : FunctionTree(nullptr) { }
     ~FunctionTree();
 
-    bool constructTree(llvm::Function *f, llvm::LoopInfo &li); // should use this instead
-    bool constructTreeFromNode(Node *n); // use subtrees later for something???
+    bool constructTree(llvm::Function *f, llvm::LoopInfo &li);
 
-    // getters and setters
     llvm::Function *getFunction(void) const { return associated_function; }
 
     // printing stuff
@@ -32,10 +30,14 @@ namespace AutoMP {
     friend std::ostream &operator<<(std::ostream &, const FunctionTree &);
     friend llvm::raw_ostream &operator<<(llvm::raw_ostream &, const FunctionTree &);
 
-    const AnnotationSet &getAnnotationsForInst(const llvm::Instruction *) const;
-    const AnnotationSet &getAnnotationsForInst(const llvm::Instruction *, const llvm::Loop *) const;
+    const AnnotationSet &getAnnotationsForInst(llvm::Instruction *) const;
+    const AnnotationSet &getAnnotationsForInst(llvm::Instruction *, llvm::Loop *) const;
+
+    bool loopContainsAnnotation(llvm::Loop *) const;
 
     void writeDotFile(const std::string filename);
+
+    bool isValidTree(void) const;
 
     std::vector<Node *> nodes; // remove this once an iterator is developed
 
@@ -45,9 +47,9 @@ namespace AutoMP {
 
     int num_nodes;
 
-    const Node *findNodeForLoop(const Node *, const llvm::Loop *) const; // level-order traversal
-    const Node *findNodeForBasicBlock(const Node *, const llvm::BasicBlock *) const;
-    const Node *findNodeForInstruction(const Node *, const llvm::Instruction *) const;
+    Node *findNodeForLoop(Node *, llvm::Loop *) const; // level-order traversal
+    Node *findNodeForBasicBlock(Node *, llvm::BasicBlock *) const;
+    Node *findNodeForInstruction(Node *, llvm::Instruction *) const;
     Node *searchUpForAnnotation(Node *start, std::pair<std::string, std::string> a) __attribute__ ((deprecated)); // search upward from a node to find first node with matching annotation
     std::vector<Node *> getNodesInPreorder(Node *start) const;
     std::vector<LoopContainerNode *> getAllLoopContainerNodes(void) const;
@@ -60,9 +62,6 @@ namespace AutoMP {
     // Change these to use the node instead so we don't have to traverse the tree?
     void addBasicBlocksToLoops(llvm::LoopInfo &li);
     void addNonLoopBasicBlocks(llvm::LoopInfo &li);
-
-    // If something like a "critical" pragma is attached to a basic block, do something
-    void backAnnotateLoopFromBasicBlocks(llvm::Loop *l);
 
     bool splitBasicBlocksByAnnotation(void);
     bool fixBasicBlockAnnotations(void);

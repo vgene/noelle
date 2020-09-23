@@ -9,6 +9,9 @@
 // #include "liberty/Utilities/ReportDump.h"
 
 #include "Talkdown.hpp"
+#include "Node.hpp"
+#include "AnnotationParser.hpp"
+#include "Annotation.hpp"
 
 #include <iostream>
 #include <map>
@@ -52,6 +55,7 @@ namespace llvm
       for ( auto &tree : function_trees )
       {
         llvm::errs() << tree;
+        // tree.writeDotFile(tree.getFunction()->getName().str());
       }
       errs() << "\n-------- Done printing function trees --------\n";
     }
@@ -74,16 +78,27 @@ namespace llvm
     return false;
   }
 
-  const AnnotationSet &Talkdown::getAnnotationsForInst(const Instruction *i) const
+  const AnnotationSet &Talkdown::getAnnotationsForInst(Instruction *i) const
   {
     assert(0);
   }
 
-  const AnnotationSet &Talkdown::getAnnotationsForInst(const Instruction *i, const Loop *l) const
+  const AnnotationSet &Talkdown::getAnnotationsForInst(Instruction *i, Loop *l) const
   {
     Function *f = l->getHeader()->getParent();
     const FunctionTree &tree = findTreeForFunction( f );
     return tree.getAnnotationsForInst(i, l);
+  }
+
+  bool Talkdown::containsAnnotation(Loop *l) const
+  {
+    /* const FunctionTree &ft = findTreeForFunction( l->getHeader()->getParent() ); */
+    /* return ft.loopContainsAnnotation( l ); */
+    Instruction *i = l->getHeader()->getFirstNonPHI();
+    AnnotationSet as = parseAnnotationsForInst(i);
+    if (!as.size())
+      return false;
+    return true;
   }
 
   const FunctionTree &Talkdown::findTreeForFunction(Function *f) const

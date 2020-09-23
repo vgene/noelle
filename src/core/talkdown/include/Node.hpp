@@ -10,13 +10,13 @@
 #include <set>
 #include <unordered_set>
 
-#include "Annotation.h"
+#include "Annotation.hpp"
 
 namespace AutoMP {
 
   struct Node
   {
-  // to work with llvm's dyn_cast()
+  // Set up an enum to work with llvm's dyn_cast()
   public:
     enum NodeKind
     {
@@ -25,14 +25,15 @@ namespace AutoMP {
     };
     NodeKind getKind() const { return kind; }
     static bool classof(const Node *n) {
-      return n->getKind() == NK_Base;
+      return n->getKind() >= NK_Base && n->getKind() <= NK_LoopContainer;
     }
 
+  // constructors and destructors
   public:
-    // constructors and destructors
     Node() : Node(nullptr, nullptr, nullptr) { }
-		Node(Node *p, llvm::Loop *l = nullptr, llvm::BasicBlock *bb = nullptr, NodeKind k = NK_Base) :
-			parent(p), loop(l), basic_block(bb), kind(k)
+		Node(Node *p, llvm::Loop *l = nullptr, llvm::BasicBlock *bb = nullptr) : Node(p, l, bb, NK_Base) {}
+		Node(Node *p, llvm::Loop *l, llvm::BasicBlock *bb, NodeKind k) :
+			parent(p), loop(l), basic_block(bb), kind(k), location_string()
     {
       if ( p )
         p->addChild(this);
@@ -41,8 +42,10 @@ namespace AutoMP {
     }
 		virtual ~Node() { how_many--; }
 
+  // class methods
+  public:
     // Linking nodes together
-    Node *getParent(void) { return parent; }
+    Node *getParent(void) const { return parent; }
     void setParent(Node *p) { parent = p; }
     void addChild(Node *p) { children.emplace(p); }
     void removeChild(Node *p) { children.erase(p); }
@@ -62,8 +65,12 @@ namespace AutoMP {
     void addAnnotations(AnnotationSet &&);
     bool containsAnnotationWithKey(std::string s) const;
     bool containsAnnotation(const Annotation &a) const;
-    AnnotationSet getAnnotations(void) const { return annotations; }
+    const AnnotationSet &getAnnotations(void) const { return annotations; }
     AnnotationSet getRealAnnotations(void) const;
+
+    // debug locations in source
+    void setDebugLoc(std::string s) { location_string = s; }
+    std::string getDebugLoc() const { return location_string; }
 
     // printing stuff
     llvm::raw_ostream &recursivePrint(llvm::raw_ostream &) const;
@@ -76,12 +83,13 @@ namespace AutoMP {
 		static unsigned int how_many;
 
   private:
-    unsigned int ID; // XXX this can be a static int so that it is easy to assign an ID to a node
+    unsigned int ID;
     Node *parent;
     std::set<Node *> children;
     llvm::Loop *loop;
     llvm::BasicBlock *basic_block;
     const NodeKind kind;
+    std::string location_string; // location in source code
 
     static constexpr std::array restricted_keys{
       "__root",
@@ -97,9 +105,9 @@ namespace AutoMP {
   struct LoopContainerNode : public Node
   {
   public:
-    LoopContainerNode() : LoopContainerNode(nullptr, nullptr, nullptr) { }
-    LoopContainerNode(Node *p, llvm::Loop *l = nullptr, llvm::BasicBlock *bb = nullptr) :
-      Node(p, l, bb, NK_LoopContainer) { }
+    LoopContainerNode() : LoopContainerNode(nullptr, nullptr) { }
+    LoopContainerNode(Node *p, llvm::Loop *l) :
+      Node(p, l, nullptr, NK_LoopContainer) { }
 
     void setHeaderNode(const Node *n) { header = const_cast<Node *>(n); }
     Node *getHeaderNode(void) const { return header; }

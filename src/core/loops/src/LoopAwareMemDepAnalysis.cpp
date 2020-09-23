@@ -7,12 +7,14 @@
 
 using namespace llvm;
 
+static int talkdownRemoved;
 void llvm::refinePDGWithLoopAwareMemDepAnalysis(
   PDG *loopDG,
   Loop *l,
   LoopStructure *loopStructure,
   LoopCarriedDependencies &LCD,
   liberty::LoopAA *loopAA,
+  Talkdown *talkdown,
   LoopIterationDomainSpaceAnalysis *LIDS
 ) {
 
@@ -26,6 +28,36 @@ void llvm::refinePDGWithLoopAwareMemDepAnalysis(
     refinePDGWithLIDS(loopDG, loopStructure, LCD, LIDS);
   }
 
+  if (talkdown) {
+    refinePDGWithTalkdown(loopDG, l, talkdown);
+  }
+  errs() << "Talkdown removed " << talkdownRemoved << "\n";
+}
+
+void llvm::refinePDGWithTalkdown(PDG *loopDG, Loop *l, Talkdown *talkdown)
+{
+  // XXX CHANGE THIS
+  // This is very naive, since the rodinia benchmarks have such simple pragmas
+  if ( !talkdown->containsAnnotation(l) )
+    return;
+
+  for (auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges())) {
+    if (!loopDG->isInternal(edge->getIncomingT()) ||
+        !loopDG->isInternal(edge->getOutgoingT()))
+      continue;
+
+    // only target memory dependences (???)
+    if (!edge->isMemoryDependence())
+      continue;
+
+    // don't remove edges that aren't loop-carried
+    if (!edge->isLoopCarriedDependence())
+      continue;
+
+    errs() << "Removed a LC dep with talkdown!\n";
+    talkdownRemoved++;
+    edge->setLoopCarried(false);
+  }
 }
 
 void llvm::refinePDGWithSCAF(PDG *loopDG, Loop *l, liberty::LoopAA *loopAA) {

@@ -6,10 +6,13 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include "ReportDump.hpp"
-// #include "liberty/Utilities/ModuleLoops.h"
 #include "Tree.hpp"
 #include "Annotation.hpp"
 #include "AnnotationParser.hpp"
+
+#include <graphviz/cgraph.h>
+
+#include <cstdio>
 
 #include <algorithm>
 #include <iostream>
@@ -24,23 +27,19 @@ using namespace llvm;
 
 namespace AutoMP
 {
-  FunctionTree::FunctionTree(Function *f) : FunctionTree()
-  {
-  }
-
   FunctionTree::~FunctionTree()
   {
   }
 
   // returns inner-most loop container for loop l
-  const Node *FunctionTree::findNodeForLoop( const Node *start, const Loop *l ) const
+  Node *FunctionTree::findNodeForLoop( Node *start, Loop *l ) const
   {
     if ( start->getLoop() == l )
       return start;
 
     for ( auto &n : start->getChildren() )
     {
-      const Node *found = findNodeForLoop( n, l );
+      Node *found = findNodeForLoop( n, l );
       if ( found )
         return found;
     }
@@ -48,14 +47,14 @@ namespace AutoMP
     return nullptr;
   }
 
-  const Node *FunctionTree::findNodeForBasicBlock( const Node *start, const BasicBlock *bb ) const
+  Node *FunctionTree::findNodeForBasicBlock( Node *start, BasicBlock *bb ) const
   {
     if ( start->getBB() == bb )
       return start;
 
     for ( auto &n : start->getChildren() )
     {
-      const Node *found = findNodeForBasicBlock( n, bb );
+      Node *found = findNodeForBasicBlock( n, bb );
       if ( found )
         return found;
     }
@@ -63,7 +62,7 @@ namespace AutoMP
     return nullptr;
   }
 
-  const Node *FunctionTree::findNodeForInstruction(const Node *start, const llvm::Instruction *i) const
+  Node *FunctionTree::findNodeForInstruction(Node *start, llvm::Instruction *i) const
   {
     return findNodeForBasicBlock( start, i->getParent() );
   }
@@ -122,6 +121,21 @@ namespace AutoMP
     return retval;
   }
 
+  bool FunctionTree::loopContainsAnnotation(Loop *l) const
+  {
+    LoopContainerNode *ln = (LoopContainerNode *) findNodeForLoop(root, l);
+    assert( ln != root && "Loop container is root???" );
+    assert( ln && "No loop container node for loop???" );
+    Instruction *i = ln->getHeaderNode()->getBB()->getFirstNonPHI();
+    AnnotationSet as = parseAnnotationsForInst( i );
+    if ( !as.size() )
+      return false;
+    return true;
+    /* if ( n->getRealAnnotations().size() ) */
+    /*   return true; */
+    /* return false; */
+  }
+
   // this function adds loop-container nodes to the tree that will end up being parents to all respective subloops (both
   // subloop-container nodes and basic blocks )
   // Note that this does not add any basic blocks to the tree
@@ -136,49 +150,37 @@ namespace AutoMP
 
       // create node with root as parent
       if ( l->getParentLoop() == nullptr )
-        new_node = new LoopContainerNode( root );
+        new_node = new LoopContainerNode( root, l );
 
       // find the node containing parent loop and add as child to that node
       else
       {
-        new_node = new LoopContainerNode();
         Node *parent = const_cast<Node *>(findNodeForLoop( root, l->getParentLoop() )); // pretty stupid but I'll change it later maybe
         assert( parent != nullptr && "Subloop doesn't have a parent loop -- something is wrong with getLoopsInPreorder()" );
-        new_node->setParent( parent );
-        parent->addChild( new_node );
+        new_node = new LoopContainerNode( parent, l );
       }
 
-      // add a internal annotation
-      // XXX FIXME
-      new_node->annotations.emplace( l, "__loop_container", "yes" );
-      new_node->annotations.emplace( l, "__level", std::to_string(l->getLoopDepth()) );
+      // add an internal annotation
+      AnnotationSet as{{l, "__loop_container", "yes"}, {l, "__level", std::to_string(l->getLoopDepth())}};
+      new_node->addAnnotations( std::move(as) );
 
       // add loop line number
-      /*
       MDNode *loopMD = l->getLoopID();
       if ( loopMD )
       {
         auto *diloc = dyn_cast<DILocation>(loopMD->getOperand(1));
         auto dbgloc = DebugLoc(diloc);
-        new_node->annotations.emplace( l, "__line_num", std::to_string(dbgloc.getLine()) );
+        new_node->setDebugLoc( std::to_string(dbgloc.getLine()) );
       }
-      else
-      {
-        new_node->annotations.emplace( l, "__line_num", "-1" );
-      }
-      */
 
-      new_node->setLoop( l );
       BasicBlock *header = l->getHeader();
       assert( header && "Loop doesn't have header!" );
 
       nodes.push_back( new_node ); // FIXME: remove once iterator done
 
-      /*
       // add annotations that apply to whole loop (namely ones in the header)
-      AnnotationSet as = parseAnnotationsForInst( header->getFirstNonPHI() );
-      new_node->annotations.insert( as.begin(), as.end() );
-      */
+      /* AnnotationSet as = parseAnnotationsForInst( header->getFirstNonPHI() ); */
+      /* new_node->addAnnotations( std::move(as) ); */
     }
 
     // annotateLoops();
@@ -206,7 +208,7 @@ namespace AutoMP
       // inherit annotations from outer loops
       if ( node->getParent() != root )
       {
-        node->addAnnotations( node->getParent()->getRealAnnotations() );
+        // node->addAnnotations( node->getParent()->getRealAnnotations() );
       }
 
       Node *header = node->getHeaderNode();
@@ -216,6 +218,8 @@ namespace AutoMP
       auto as = parseAnnotationsForInst( i );
       if ( as.size() == 0 )
         continue;
+
+      // need to check if parent of that loop has the same annotations. If so then they come from the outer loop
 
       // found annotation in loop header, propagate to all direct children
       AnnotationSet new_annots;
@@ -228,6 +232,7 @@ namespace AutoMP
   }
 
   // creates nodes for basic blocks that belong to a loop and links to the correct loop container node
+  // NOTE: doesn't add annotations to basic block node
   void FunctionTree::addBasicBlocksToLoops(LoopInfo &li)
   {
 
@@ -244,23 +249,21 @@ namespace AutoMP
 
       Node *new_node = new Node( insert_pt );
       new_node->setBB( &bb );
-      new_node->annotations.emplace(nullptr, "__loop_bb", "true");
+      AnnotationSet as;
+      as.emplace(nullptr, "__loop_bb", "true");
       if ( l->getHeader() == &bb )
       {
-        new_node->annotations.emplace(nullptr, "__loop_header", "true");
+        as.emplace(nullptr, "__loop_header", "true");
         insert_pt->setHeaderNode( new_node );
       }
+      new_node->addAnnotations( std::move(as) );
       nodes.push_back( new_node );
     }
   }
 
-  void FunctionTree::backAnnotateLoopFromBasicBlocks(Loop *l)
-  {
-
-  }
-
   // Splits a basic block between two instructions when their respective annotations differ
-  // TODO (gc14): not complete at all
+  // After this is done, we should supposedly just need to fetch the annotations for the first instruction in a basic block
+  // and to be able to assume that they apply to the whole block
   bool FunctionTree::splitBasicBlocksByAnnotation(void)
   {
     std::vector<Instruction *> split_points; // points to split basic blocks
@@ -285,6 +288,14 @@ namespace AutoMP
          */
 
         // found mismatch -- should split basic block between i-1 and i
+        // XXX I don't think this is 100% correct. It will probably fail for the following code:
+        // for (...) {
+        //   #pragma note noelle
+        //   {
+        //     printf("With annotation\n");
+        //   }
+        //   printf("No annotation\n");
+        // }
         if ( prev_annots.size() != 0 && annots.size() != 0 && annots != prev_annots )
         {
           // invalidated_bbs.insert( i.getParent() );
@@ -317,6 +328,7 @@ namespace AutoMP
   }
 
   // fix when the frontend doesn't attach annotation to every instructions
+  // XXX doesn't work yet with nested annotations
   bool FunctionTree::fixBasicBlockAnnotations(void)
   {
     LLVMContext &ctx = associated_function->getContext(); // a function is contained within a single context
@@ -353,7 +365,7 @@ namespace AutoMP
   }
 
   // we don't care about annotations for non-loop basic blocks
-  // XXX Long-term: support #pragma omp parallel region (not necessitating for clause)
+  // XXX Long-term: support #pragma omp parallel region (not necessitating "for" clause)
   void FunctionTree::addNonLoopBasicBlocks(LoopInfo &li)
   {
     for ( auto &bb : *associated_function )
@@ -464,14 +476,13 @@ namespace AutoMP
   }
 #endif
 
-  const AnnotationSet &FunctionTree::getAnnotationsForInst(const Instruction *) const
+  const AnnotationSet &FunctionTree::getAnnotationsForInst(Instruction *) const
   {
     assert(0 && "getAnnotationsForInst(llvm::Instruction *) not implemented yet");
   }
 
-  const AnnotationSet &FunctionTree::getAnnotationsForInst(const Instruction *i, const Loop *l) const
+  const AnnotationSet &FunctionTree::getAnnotationsForInst(Instruction *i, Loop *l) const
   {
-    // assert(0 && "getAnnotationsForInst(llvm::Instruction *, llvm::Loop *) not implemented yet");
     const Node *n = findNodeForLoop(root, l);
     const BasicBlock *target = i->getParent();
     for ( const auto &bbn : n->getChildren() )
@@ -481,7 +492,26 @@ namespace AutoMP
 
   void FunctionTree::writeDotFile( const std::string filename )
   {
-    // NOTE(greg): Use GraphWriter to print out the tree better
+    std::FILE *fp = std::fopen(filename.c_str(), "w");
+    // assert( 0 && "writeDotFile() not implemented yet" );
+    Agraph_t *g = agopen((char*) filename.c_str(), Agdirected, NULL);
+    Agnode_t *n0 = agnode(g, "node0", 1);
+    Agnode_t *n1 = agnode(g, "node1", 1);
+    Agedge_t *e = agedge(g, n0, n1, "e0", 1);
+    agwrite(g, fp);
+    agclose(g);
+  }
+
+  // verify that the current tree is value
+  bool FunctionTree::isValidTree(void) const
+  {
+    /*
+     * Steps to perform:
+     *  1. Verify all loop container nodes are in the tree
+     *  2. Verify there are no duplicate basic block nodes
+     */
+
+    return false;
   }
 
   void FunctionTree::printNodeToInstructionMap(void) const
@@ -511,6 +541,7 @@ namespace AutoMP
     os << "Nodes to instruction map:\n";
     tree.printNodeToInstructionMap();
     Function *af = tree.getFunction();
+    os << "Contains " << tree.getNodesInPreorder(tree.root).size() << " nodes\n";
     assert( af && "Function associated with a FunctionTree null" );
 
     // XXX For heavy debugging

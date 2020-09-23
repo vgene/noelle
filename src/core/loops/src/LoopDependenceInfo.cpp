@@ -22,7 +22,7 @@ LoopDependenceInfo::LoopDependenceInfo(
   DominatorSummary &DS,
   ScalarEvolution &SE,
   uint32_t maxCores
-) : LoopDependenceInfo{fG, l, DS, SE, maxCores, {}, nullptr, true} {
+) : LoopDependenceInfo{fG, l, DS, SE, maxCores, {}, nullptr, nullptr, true} {
 
   return ;
 }
@@ -34,7 +34,7 @@ LoopDependenceInfo::LoopDependenceInfo(
   ScalarEvolution &SE,
   uint32_t maxCores,
   liberty::LoopAA *aa
-) : LoopDependenceInfo{fG, l, DS, SE, maxCores, {}, aa, true} {
+) : LoopDependenceInfo{fG, l, DS, SE, maxCores, {}, aa, nullptr, true} {
 
   return ;
 }
@@ -46,7 +46,7 @@ LoopDependenceInfo::LoopDependenceInfo(
   ScalarEvolution &SE,
   uint32_t maxCores,
   std::unordered_set<LoopDependenceInfoOptimization> optimizations
-) : LoopDependenceInfo{fG, l, DS, SE, maxCores, optimizations, nullptr, true} {
+) : LoopDependenceInfo{fG, l, DS, SE, maxCores, optimizations, nullptr, nullptr, true} {
 
   return ;
 }
@@ -59,6 +59,7 @@ LoopDependenceInfo::LoopDependenceInfo(
   uint32_t maxCores,
   std::unordered_set<LoopDependenceInfoOptimization> optimizations,
   liberty::LoopAA *loopAA,
+  Talkdown *talkdown,
   bool enableLoopAwareDependenceAnalyses
 ) : DOALLChunkSize{8},
     maximumNumberOfCoresForTheParallelization{maxCores},
@@ -78,7 +79,7 @@ LoopDependenceInfo::LoopDependenceInfo(
   this->fetchLoopAndBBInfo(l, SE);
   auto ls = getLoopStructure();
   auto loopExitBlocks = ls->getLoopExitBasicBlocks();
-  auto DGs = this->createDGsForLoop(l, fG, DS, SE, loopAA);
+  auto DGs = this->createDGsForLoop(l, fG, DS, SE, loopAA, talkdown);
   this->loopDG = DGs.first;
   auto loopSCCDAG = DGs.second;
 
@@ -172,7 +173,8 @@ std::pair<PDG *, SCCDAG *> LoopDependenceInfo::createDGsForLoop (
   PDG *functionDG,
   DominatorSummary &DS,
   ScalarEvolution &SE,
-  liberty::LoopAA *aa
+  liberty::LoopAA *aa,
+  Talkdown *talkdown
 ) {
 
   /*
@@ -194,7 +196,7 @@ std::pair<PDG *, SCCDAG *> LoopDependenceInfo::createDGsForLoop (
    * When they are, this won't need to be done
    *
    * HACK: The SCCDAG is constructed with a loop internal DG to avoid external nodes in the loop DG
-   * which provide context (live-ins/live-outs) but which complicate analyzing the resulting SCCDAG 
+   * which provide context (live-ins/live-outs) but which complicate analyzing the resulting SCCDAG
    */
   LoopCarriedDependencies lcdUsingLoopDGEdges(liSummary, DS, *loopDG);
   auto loopStructure = liSummary.getLoopNestingTreeRoot();
@@ -205,7 +207,7 @@ std::pair<PDG *, SCCDAG *> LoopDependenceInfo::createDGsForLoop (
   auto ivManager = InductionVariableManager(liSummary, invManager, SE, preRefinedSCCDAG, env);
   auto domainSpace = LoopIterationDomainSpaceAnalysis(liSummary, ivManager, SE);
   if (this->areLoopAwareAnalysesEnabled){
-    refinePDGWithLoopAwareMemDepAnalysis(loopDG, l, loopStructure, lcdUsingLoopDGEdges, aa, &domainSpace);
+    refinePDGWithLoopAwareMemDepAnalysis(loopDG, l, loopStructure, lcdUsingLoopDGEdges, aa, talkdown, &domainSpace);
   }
 
   if (enabledOptimizations.find(LoopDependenceInfoOptimization::MEMORY_CLONING_ID) != enabledOptimizations.end()) {
@@ -297,7 +299,7 @@ void LoopDependenceInfo::removeUnnecessaryDependenciesThatCloningMemoryNegates (
     loopInternalDG->removeEdge(edge);
   }
 }
- 
+
 bool LoopDependenceInfo::isTransformationEnabled (Transformation transformation){
   auto exist = this->enabledTransformations.find(transformation) != this->enabledTransformations.end();
 

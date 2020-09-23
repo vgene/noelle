@@ -5,14 +5,13 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "SystemHeaders.hpp"
 
 #include "Util/SVFModule.h"
 #include "WPA/Andersen.h"
-#include "TalkDown.hpp"
 #include "PDGPrinter.hpp"
 #include "PDGAnalysis.hpp"
 
@@ -30,7 +29,7 @@ PDGAnalysis::PDGAnalysis()
     , disableSVF{false}
     , disableAllocAA{false}
     , disableRA{false}
-    , printer{} 
+    , printer{}
   {
 
   return ;
@@ -174,7 +173,7 @@ PDG * PDGAnalysis::getPDG (void){
 
     /*
      * There is no PDG in the IR.
-     * 
+     *
      * Compute the PDG using the dependence analyses.
      */
     this->programDependenceGraph = constructPDGFromAnalysis(*this->M);
@@ -224,7 +223,7 @@ PDG * PDGAnalysis::constructPDGFromAnalysis(Module &M) {
 
   trimDGUsingCustomAliasAnalysis(pdg);
 
-  return pdg; 
+  return pdg;
 }
 
 PDG * PDGAnalysis::constructFunctionDGFromAnalysis(Function &F) {
@@ -310,10 +309,10 @@ void PDGAnalysis::constructEdgesFromMetadata(PDG *pdg, Function &F, unordered_ma
     for (auto &operand : edgesM->operands()) {
       if (MDNode *edgeM = dyn_cast<MDNode>(operand)) {
         auto edge = constructEdgeFromMetadata(pdg, edgeM, IDNodeMap);
-  
+
         /*
          * Construct subEdges and set attributes
-         */        
+         */
         if (MDNode *subEdgesM = dyn_cast<MDNode>(edgeM->getOperand(8))) {
           for (auto &subOperand : subEdgesM->operands()) {
             if (MDNode *subEdgeM = dyn_cast<MDNode>(subOperand)) {
@@ -322,10 +321,10 @@ void PDGAnalysis::constructEdgesFromMetadata(PDG *pdg, Function &F, unordered_ma
             }
           }
         }
-        
+
         /*
          * Add edge to pdg
-         */ 
+         */
         pdg->copyAddEdge(*edge);
 
         /*
@@ -412,12 +411,6 @@ void PDGAnalysis::trimDGUsingCustomAliasAnalysis (PDG *pdg) {
    * Invoke AllocAA
    */
   removeEdgesNotUsedByParSchemes(pdg);
-
-  /*
-   * Invoke the TalkDown
-   */
-  auto& talkDown = getAnalysis<TalkDown>();
-  //TODO
 
   return ;
 }
@@ -817,7 +810,7 @@ bool PDGAnalysis::edgeIsAlongNonMemoryWritingFunctions (DGEdge<Value> *edge) {
    * Handle the case both instructions are calls.
    */
   if (  true
-        && isa<CallInst>(outgoingT) 
+        && isa<CallInst>(outgoingT)
         && isa<CallInst>(incomingT)
     ) {
 
@@ -850,13 +843,13 @@ bool PDGAnalysis::edgeIsAlongNonMemoryWritingFunctions (DGEdge<Value> *edge) {
   } else {
     assert(isa<CallInst>(incomingT));
     call = cast<CallInst>(incomingT);
-    mem = outgoingT; 
+    mem = outgoingT;
   }
   auto callName = getCallFnName(call);
   return isa<LoadInst>(mem) && isFunctionNonWriting(callName)
     || isa<StoreInst>(mem) && isFunctionMemoryless(callName);
 }
-      
+
 PDGAnalysis::~PDGAnalysis() {
   if (this->programDependenceGraph)
     delete this->programDependenceGraph;

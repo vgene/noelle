@@ -45,3 +45,4 @@ patchInstallDir "noelle-prof-coverage" ;
 patchInstallDir "noelle-config" ;
 patchInstallDir "noelle-simplification" ;
 patchInstallDir "loopaa" ;
+patchInstallDir "noelle-talkdown" ;

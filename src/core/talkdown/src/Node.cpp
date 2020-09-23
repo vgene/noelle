@@ -57,13 +57,14 @@ namespace AutoMP
 
   llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Node *node)
   {
+    auto *lcn = dyn_cast<LoopContainerNode>(node);
+
     if ( !node->parent )
-      /* os << "\033[1;31m** Root node **\033[0m\n"; */
       os << "** Root node **\n";
-    else if ( node->children.size() == 0 )
-      os << "** Leaf node **\n";
+    else if ( lcn )
+      os << "** Loop container node **\n";
     else
-      os << "** Intermediate node **\n";
+      os << "** Basic block node **\n";
 
     os << "\tID: " << node->ID << "\n";
     if ( node->parent )
@@ -71,9 +72,12 @@ namespace AutoMP
     if ( node->getBB() )
       os << "\tBasic block: " << node->getBB() << "\n";
 
-    // XXX this would be pretty cool to get working
-    /* if ( dyn_cast<const LoopContainerNode *>(node) ) */
-    /*   os << ""; */
+    if ( lcn )
+    {
+      os << "\tLoop: " << node->loop << "\n";
+      os << "\tLine num: " << node->getDebugLoc() << "\n";
+      os << "\tHeader inst: " << *(lcn->getHeaderNode()->getBB()->getFirstNonPHI()) << "\n";
+    }
 
     os << "\tAnnotations:\n";
     for ( auto &annot : node->annotations )
