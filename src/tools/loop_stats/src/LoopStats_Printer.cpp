@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "LoopStats.hpp"
@@ -35,6 +35,7 @@ void LoopStats::printPerLoopStats (Hot *profiles, Stats *stats) {
   errs() << "      Number of SCCs: " << stats->numberOfSCCs << "\n";
   errs() << "      Number of sequential SCCs: " << stats->numberOfSequentialSCCs << "\n";
   errs() << "      Number of dynamic instructions executed in sequential SCCs: " << stats->dynamicInstructionsOfSequentialSCCs << "\n";
+  errs() << "      Number of remaining LC deps: " << stats->totalLCEdges << "\n";
 
   return ;
 }
@@ -47,9 +48,11 @@ void LoopStats::printStatsHumanReadable (Hot *profiles) {
    * Compute the coverage of all loops.
    */
   uint64_t loopsDynamicInstructions = 0;
+  uint64_t allLCDeps = 0;
   for (auto idAndNoelleLoop : statsByLoopAccordingToNoelle) {
     auto noelleStats = idAndNoelleLoop.second;
     loopsDynamicInstructions += noelleStats->dynamicTotalInstructions;
+    allLCDeps += noelleStats->totalLCEdges;
   }
 
   /*
@@ -106,6 +109,7 @@ void LoopStats::printStatsHumanReadable (Hot *profiles) {
   printPerLoopStats(profiles, &totalInfoLLVM);
   errs() << "      Average number of dynamic instructions of sequential SCCs: " << averageSequentialSCCLLVM << "\n";
   errs() << "      Average coverage of sequential SCCs: " << (averageSequentialSCCLLVM / ((double)profiles->getTotalInstructions())) << " %\n";
+  errs() << " Total number of LC deps remaining: " << allLCDeps << "\n";
 
   return;
 }

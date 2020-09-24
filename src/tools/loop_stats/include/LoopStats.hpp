@@ -15,7 +15,7 @@
 using namespace llvm;
 
 namespace llvm {
-  
+
   struct LoopStats : public ModulePass {
     public:
       static char ID;
@@ -42,6 +42,7 @@ namespace llvm {
         int64_t numberOfSequentialSCCs = 0;
         int64_t dynamicInstructionsOfSequentialSCCs = 0;
         uint64_t dynamicTotalInstructions = 0;
+        uint64_t totalLCEdges = 0;
 
         Stats operator + (Stats const &obj) {
           Stats res;
@@ -56,6 +57,7 @@ namespace llvm {
           res.numberOfSequentialSCCs = this->numberOfSequentialSCCs + obj.numberOfSequentialSCCs;
           res.dynamicInstructionsOfSequentialSCCs = this->dynamicInstructionsOfSequentialSCCs + obj.dynamicInstructionsOfSequentialSCCs;
           res.dynamicTotalInstructions = this->dynamicTotalInstructions + obj.dynamicTotalInstructions;
+          res.totalLCEdges = this->totalLCEdges + obj.totalLCEdges;
 
           return res;
         }

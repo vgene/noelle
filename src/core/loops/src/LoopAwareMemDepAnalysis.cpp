@@ -4,8 +4,12 @@
 #include "DataFlow.hpp"
 
 #include "Utilities/PDGQueries.h"
+#include "Utilities/PrintDebugInfo.h"
 
 using namespace llvm;
+
+#define         USE_TALKDOWN
+#define          USE_SCAF
 
 static int talkdownRemoved;
 void llvm::refinePDGWithLoopAwareMemDepAnalysis(
@@ -20,26 +24,52 @@ void llvm::refinePDGWithLoopAwareMemDepAnalysis(
 
   // TODO: add here other types of loopAware refinements of the PDG
 
+#ifdef USE_SCAF
   if (loopAA) {
     refinePDGWithSCAF(loopDG, l, loopAA);
   }
+#endif
 
   if (LIDS) {
     refinePDGWithLIDS(loopDG, loopStructure, LCD, LIDS);
   }
 
+#ifdef USE_TALKDOWN
   if (talkdown) {
     refinePDGWithTalkdown(loopDG, l, talkdown);
   }
   errs() << "Talkdown removed " << talkdownRemoved << "\n";
+#endif
 }
 
 void llvm::refinePDGWithTalkdown(PDG *loopDG, Loop *l, Talkdown *talkdown)
 {
   // XXX CHANGE THIS
   // This is very naive, since the rodinia benchmarks have such simple pragmas
-  if ( !talkdown->containsAnnotation(l) )
+  /* if ( !talkdown->containsAnnotation(l) ) */
+  /*   return; */
+
+#if !defined(USE_SCAF) && defined(USE_TALKDOWN)
+  for (auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges())) {
+    if (!loopDG->isInternal(edge->getIncomingT()) ||
+        !loopDG->isInternal(edge->getOutgoingT()))
+      continue;
+    if ( !edge->isMemoryDependence() )
+      continue;
+    edge->setLoopCarried(true);
+  }
+#endif
+
+  // XXX this is a hack since the loop pointer changed and Talkdown couldn't find the node for the loop
+  MDNode *lmd = l->getHeader()->getFirstNonPHIOrDbgOrLifetime()->getMetadata("note.noelle");
+  if ( !lmd )
     return;
+  if ( l->getParentLoop() && lmd == l->getParentLoop()->getHeader()->getFirstNonPHIOrDbgOrLifetime()->getMetadata("note.noelle") )
+    return;
+
+  errs() << "Found real annotation for loop at ";
+  liberty::printInstDebugInfo(l->getHeader()->getFirstNonPHIOrDbgOrLifetime());
+  errs() << "\n";
 
   for (auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges())) {
     if (!loopDG->isInternal(edge->getIncomingT()) ||

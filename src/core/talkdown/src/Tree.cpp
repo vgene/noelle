@@ -27,6 +27,25 @@ using namespace llvm;
 
 namespace AutoMP
 {
+  static bool ancestorsContainAnnotations(Node *n, const AnnotationSet &as)
+  {
+    using namespace std;
+    while ( (n = n->getParent()) != nullptr )
+    {
+      auto as_p = n->getRealAnnotations();
+      int count = 0;
+      for ( const auto &a : as )
+      {
+        if ( as_p.end() != as_p.find(a) )
+          count++;
+      }
+      if ( as.size() == count )
+        return true;
+    }
+
+    return false;
+  }
+
   FunctionTree::~FunctionTree()
   {
   }
@@ -123,18 +142,16 @@ namespace AutoMP
 
   bool FunctionTree::loopContainsAnnotation(Loop *l) const
   {
+    errs() << "Looking for container node for loop " << l << "\n";
     LoopContainerNode *ln = (LoopContainerNode *) findNodeForLoop(root, l);
     assert( ln != root && "Loop container is root???" );
     assert( ln && "No loop container node for loop???" );
-    /* Instruction *i = ln->getHeaderNode()->getBB()->getFirstNonPHI(); */
-    /* AnnotationSet as = parseAnnotationsForInst( i ); */
-    AnnotationSet as = ln->getRealAnnotations();
+    errs() << "Found!\n";
+    AnnotationSet as;
+    // AnnotationSet as = ln->getRealAnnotations();
     if ( !as.size() )
       return false;
     return true;
-    /* if ( n->getRealAnnotations().size() ) */
-    /*   return true; */
-    /* return false; */
   }
 
   // this function adds loop-container nodes to the tree that will end up being parents to all respective subloops (both
@@ -216,6 +233,12 @@ namespace AutoMP
 
       // inherit annotations from outer loops...
       // UNLESS they contain the same annotations. That means they only apply to the outer loop
+      if ( !ancestorsContainAnnotations(node, as) )
+        node->addAnnotations( std::move(node->getParent()->getRealAnnotations()) );
+      else
+        REPORT_DUMP(errs() << "Parent loop contains same annotation as subloop\n";);
+
+      /*
       if ( node->getParent() != root )
       {
         auto parent_as = node->getParent()->getRealAnnotations();
@@ -224,6 +247,7 @@ namespace AutoMP
         else
           REPORT_DUMP(errs() << "Parent loop contains same annotation as subloop\n";);
       }
+      */
 
       // found annotation in loop header, propagate to all direct children
       AnnotationSet new_annots;

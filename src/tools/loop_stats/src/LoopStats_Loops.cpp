@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "LoopStats.hpp"
@@ -47,6 +47,17 @@ void LoopStats::collectStatsForLoop (Hot *profiles, LoopDependenceInfo &LDI) {
    * Compute the coverage for the loop.
    */
   statsForLoop->dynamicTotalInstructions = profiles->getTotalInstructions(loopStructure);
+  auto loopDG = LDI.getLoopDG();
+  for ( auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges()) )
+  {
+    // don't count edges that come from outside
+    if ( !loopDG->isInternal(edge->getIncomingT()) ||
+         !loopDG->isInternal(edge->getOutgoingT()) ||
+         !edge->isLoopCarriedDependence() )
+      continue;
+    statsForLoop->totalLCEdges++;
+  }
+
 
   return ;
 }
