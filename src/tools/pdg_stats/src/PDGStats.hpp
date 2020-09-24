@@ -10,13 +10,11 @@
  */
 #pragma once
 
-#include "llvm/IR/Module.h"
-
-using namespace llvm;
+#include "Noelle.hpp"
 
 namespace llvm {
   
-  struct PDGStats : public ModulePass {
+  class PDGStats : public ModulePass {
     public:
       enum EDGE_ATTRIBUTE {
         IS_MEMORY_DEPENDENCE = 2,
@@ -44,8 +42,8 @@ namespace llvm {
       int64_t numberOfControlDependence = 0;
 
       void collectStatsForNodes(Function &F);
-      void collectStatsForPotentialEdges (Function &F) ;
-      void collectStatsForEdges(Function &F);
+      void collectStatsForPotentialEdges (std::unordered_map<Function *, StayConnectedNestedLoopForest *> &programLoops, Function &F) ;
+      void collectStatsForEdges (Noelle &noelle, std::unordered_map<Function *, StayConnectedNestedLoopForest *> &programLoops, Function &F);
       bool edgeIsDependenceOf(MDNode *edgeM, EDGE_ATTRIBUTE edgeAttribute);
       void printStats();
   };
