@@ -18,7 +18,7 @@
 #include "PDG.hpp"
 #include "AllocAA.hpp"
 #include "PDGPrinter.hpp"
-#include "Talkdown.hpp"
+// #include "Talkdown.hpp"
 #include "DataFlow.hpp"
 #include "CallGraph.hpp"
 
@@ -55,7 +55,7 @@ namespace llvm {
       std::unordered_map<Function *, PDG *> functionToFDGMap;
       AllocAA *allocAA;
       std::set<Function *> CGUnderMain;
-      Talkdown *talkdown;
+      // Talkdown *talkdown;
       DataFlowAnalysis dfa;
       PDGVerbosity verbose;
       bool embedPDG;
