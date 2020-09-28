@@ -4,7 +4,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
 
-#include "Noelle.hpp"
+// #include "Noelle.hpp"
 
 #include "ReportDump.hpp"
 #include "Tree.hpp"
