@@ -3,7 +3,8 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+
+#include "Noelle.hpp"
 
 #include "ReportDump.hpp"
 #include "Tree.hpp"
@@ -13,7 +14,6 @@
 #include <graphviz/cgraph.h>
 
 #include <cstdio>
-
 #include <algorithm>
 #include <iostream>
 #include <unordered_set>
@@ -90,7 +90,8 @@ namespace AutoMP
   {
     while ( start->getParent() )
     {
-      for ( auto &annot : start->annotations )
+      auto as = start->getAnnotations();
+      for ( const auto &annot : as )
       {
         // if key and value match an annotaion of the current node, return that node
         if ( !annot.getKey().compare(a.first) && !annot.getValue().compare(a.second) )
@@ -289,109 +290,6 @@ namespace AutoMP
     }
   }
 
-  // Splits a basic block between two instructions when their respective annotations differ
-  // After this is done, we should supposedly just need to fetch the annotations for the first instruction in a basic block
-  // and to be able to assume that they apply to the whole block
-  bool FunctionTree::splitBasicBlocksByAnnotation(void)
-  {
-    std::vector<Instruction *> split_points; // points to split basic blocks
-
-    // go through all basic blocks first before performing the split to keep iterators valid
-    for ( auto &bb : *associated_function )
-    {
-      AnnotationSet prev_annots; // seen annotations
-      for ( auto &i : bb )
-      {
-        // XXX Once we transition to intrinsics, this will have to be changed
-        if ( isa<IntrinsicInst>(&i) )
-        {
-          continue;
-        }
-
-        auto annots = parseAnnotationsForInst( &i );
-
-        /* sometimes the frontend doesn't attach metadata to instructions that should have metadata attached
-         * (e.g. on some getelementptr instructions)
-         * for now, ignore these and consider them as having the same annotations as the previous instruction
-         */
-
-        // found mismatch -- should split basic block between i-1 and i
-        // XXX I don't think this is 100% correct. It will probably fail for the following code:
-        // for (...) {
-        //   #pragma note noelle
-        //   {
-        //     printf("With annotation\n");
-        //   }
-        //   printf("No annotation\n");
-        // }
-        if ( prev_annots.size() != 0 && annots.size() != 0 && annots != prev_annots )
-        {
-          // invalidated_bbs.insert( i.getParent() );
-          errs() << "Split point found at " << *&i << "\n";
-          errs() << "Previous metadata was:\n";
-          for ( const auto &m : prev_annots )
-            errs() << m;
-          errs() << "Current metadata is:\n";
-          for ( const auto &m : annots )
-            errs() << m;
-          split_points.push_back( &i );
-        }
-
-        prev_annots = annots;
-      }
-    }
-
-    // if no split points are found, don't do anything
-    if ( !split_points.size() )
-      return false;
-
-    // actually do the basic block splitting
-    for ( auto &i : split_points )
-    {
-      BasicBlock *old = i->getParent();
-      BasicBlock *new_block = SplitBlock( old, i );
-    }
-
-    return true;
-  }
-
-  // fix when the frontend doesn't attach annotation to every instructions
-  // XXX doesn't work yet with nested annotations
-  bool FunctionTree::fixBasicBlockAnnotations(void)
-  {
-    LLVMContext &ctx = associated_function->getContext(); // a function is contained within a single context
-    bool modified = false;
-
-    for ( auto &bb : *associated_function )
-    {
-      MDNode *md = nullptr;
-
-      for ( auto &i : bb )
-      {
-        md = i.getMetadata( "note.noelle" );
-        if ( md )
-          break;
-      }
-
-      // if no metadata in the basic block
-      if ( !md )
-        continue;
-
-      // insert it into each instruction in the basic block
-      for (auto &i : bb )
-      {
-        MDNode *meta = i.getMetadata("note.noelle");
-        if ( !meta )
-        {
-          i.setMetadata("note.noelle", md);
-          modified |= true;
-        }
-      }
-    }
-
-    return modified;
-  }
-
   // we don't care about annotations for non-loop basic blocks
   // XXX Long-term: support #pragma omp parallel region (not necessitating "for" clause)
   void FunctionTree::addNonLoopBasicBlocks(LoopInfo &li)
@@ -404,7 +302,8 @@ namespace AutoMP
       if ( !l )
       {
         Node *new_node = new Node( root );
-        new_node->annotations.emplace( nullptr, "__non_loop_bb", "true" );
+        AnnotationSet as = { {nullptr, "__non_loop_bb", "true"} };
+        new_node->addAnnotations( std::move(as) );
         new_node->setBB( &bb );
         nodes.push_back( new_node ); // BAD: remove once iterator done
       }
@@ -427,14 +326,16 @@ namespace AutoMP
     // construct root node
     // TODO(greg): with annotation of function if there is one
     this->root = new Node();
+    AnnotationSet as = { {nullptr, "__root", "yes"} };
+    root->addAnnotations( std::move(as) );
     root->annotations.emplace( nullptr, "__root", "yes" );
     nodes.push_back( root ); // BAD: remove once iterator done
 
     // split basic blocks based on annotation before adding them to the tree
-    modified |= splitBasicBlocksByAnnotation();
+    // modified |= splitBasicBlocksByAnnotation();
 
     // fix the fact that the frontend misses adding annotations to some instructions
-    modified |= fixBasicBlockAnnotations();
+    // modified |= fixBasicBlockAnnotations();
 
     // add all loops containsers (including subloops) to the tree
     addLoopContainersToTree( li );
@@ -518,6 +419,7 @@ namespace AutoMP
         return bbn->getAnnotations();
   }
 
+  /*
   void FunctionTree::writeDotFile( const std::string filename )
   {
     std::FILE *fp = std::fopen(filename.c_str(), "w");
@@ -529,6 +431,7 @@ namespace AutoMP
     agwrite(g, fp);
     agclose(g);
   }
+  */
 
   // verify that the current tree is value
   bool FunctionTree::isValidTree(void) const

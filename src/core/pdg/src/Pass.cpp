@@ -46,7 +46,7 @@ void PDGAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<ScalarEvolutionWrapperPass>();
   AU.addRequired<CallGraphWrapperPass>();
   AU.addRequired<AllocAA>();
-  AU.addRequired<Talkdown>();
+  // AU.addRequired<Talkdown>();
   AU.setPreservesAll();
 
   return ;

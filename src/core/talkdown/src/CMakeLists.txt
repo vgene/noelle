@@ -29,11 +29,12 @@ include_directories(${LLVM_INCLUDE_DIRS}
   ${CMAKE_INSTALL_PREFIX}/include
   ${CMAKE_INSTALL_PREFIX}/include/svf
   ../../basic_utilities/include
+  ../../loop_structure/include
   ../include)
 
 # Declare the LLVM pass to compile
 add_llvm_library(${PassName} MODULE ${Srcs})
 
 # graphviz library
-include_directories(SYSTEM "/usr/include/graphviz")
-target_link_libraries(${PassName} PUBLIC cgraph gvc)
+# include_directories(SYSTEM "/usr/include/graphviz")
+# target_link_libraries(${PassName} PUBLIC cgraph gvc)

@@ -1,9 +1,10 @@
 #pragma once
 
+#include "LoopStructure.hpp"
+
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/Support/Casting.h"
-
 #include "llvm/Analysis/LoopInfo.h"
 
 #include <array>
