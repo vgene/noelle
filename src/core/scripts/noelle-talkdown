@@ -1,6 +1,6 @@
 #!/bin/bash
 
-installDir="/home/greg/cpf-workspace/noelle-install-release"
+installDir
 
 # Set the command to execute
 cmdToExecute="noelle-load -load ${installDir}/lib/Talkdown.so -Talkdown -print-function-trees ${@} -disable-output"
