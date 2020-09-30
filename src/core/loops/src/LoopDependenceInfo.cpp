@@ -97,7 +97,8 @@ LoopDependenceInfo::LoopDependenceInfo(
   /*
    * Calculate various attributes on SCCs
    */
-  LoopCarriedDependencies lcd(this->liSummary, DS, *loopSCCDAG);
+  auto interpretLCD = true;
+  LoopCarriedDependencies lcd(this->liSummary, DS, *loopSCCDAG, interpretLCD, interpretLCD);
   this->inductionVariables = new InductionVariableManager(liSummary, *invariantManager, SE, *loopSCCDAG, *environment);
   this->sccdagAttrs = SCCDAGAttrs(loopDG, loopSCCDAG, this->liSummary, SE, lcd, *inductionVariables, DS);
   this->domainSpaceAnalysis = new LoopIterationDomainSpaceAnalysis(liSummary, *this->inductionVariables, SE);
