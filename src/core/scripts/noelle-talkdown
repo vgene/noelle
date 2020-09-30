@@ -2,8 +2,14 @@
 
 installDir
 
+tmpFile=`mktemp`
+
+cmdToExecute="noelle-load -load ${installDir}/lib/Talkdown.so -talkdown-split-basic-blocks ${@} -o ${tmpFile}"
+echo $cmdToExecute ;
+eval $cmdToExecute 
+
 # Set the command to execute
-cmdToExecute="noelle-load -load ${installDir}/lib/Talkdown.so -Talkdown -print-function-trees ${@} -disable-output"
+cmdToExecute="noelle-load -load ${installDir}/lib/Talkdown.so -Talkdown -print-function-trees ${tmpFile} -disable-output"
 echo $cmdToExecute ;
 
 # Execute the command
