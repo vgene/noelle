@@ -23,10 +23,22 @@ LoopCarriedDependencies::LoopCarriedDependencies (
   }
 
   for (auto edge : dgForLoops.getEdges()) {
+
+    /*
+     * Check if @edge is a loop-carried dependence.
+     */
     auto loop = getLoopOfLCD(LIS, DS, edge);
     if (!loop) continue;
+
+    /*
+     * @edge could be a loop-carried data dependence.
+     * So we conservatively flag it accordingly.
+     */
     loopCarriedDependenciesMap[loop].insert(edge);
+    edge->setLoopCarried(true);
   }
+
+  return ;
 }
 
 LoopCarriedDependencies::LoopCarriedDependencies (
