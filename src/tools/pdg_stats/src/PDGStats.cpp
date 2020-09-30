@@ -25,21 +25,24 @@ bool PDGStats::runOnModule(Module &M) {
    * Compute the loops for all functions.
    */
   std::unordered_map<Function *, StayConnectedNestedLoopForest *> programLoopForests;
-  std::unordered_map<Function *, std::vector<LoopDependenceInfo *> programLoops;
+  std::unordered_map<Function *, std::vector<LoopDependenceInfo *> *> programLoops;
   for (auto &F : M) {
 
     /*
      * Fetch all loops within the current function.
      */
     programLoops[&F] = noelle.getLoops(&F);
+    if (programLoops[&F] == nullptr){
+      continue ;
+    }
 
     /*
      * Create the map from loop structure to LDI.
      */
     std::unordered_map<LoopStructure *, LoopDependenceInfo *> lsToLDI;
-    std::unordered_map<Function *, std::vector<LoopStructure *> programLoopStructures;
+    std::unordered_map<Function *, std::vector<LoopStructure *>> programLoopStructures;
     auto &loopStructures = programLoopStructures[&F];
-    for (auto LDI : programLoops[&F]){
+    for (auto LDI : *programLoops[&F]){
       auto ls = LDI->getLoopStructure();
       lsToLDI[ls] = LDI;
       loopStructures.push_back(ls);
@@ -52,12 +55,45 @@ bool PDGStats::runOnModule(Module &M) {
   }
 
   /*
-   * Collect the statistics.
+   * Compute the memory edges in the PDG.
+   */
+  auto PDG = noelle.getProgramDependenceGraph();
+  for (auto edge : PDG->getEdges()){
+    this->numberOfEdges++;
+        
+    /*
+     * Handle memory dependences.
+     */
+    if (edge->isMemoryDependence()){
+      this->numberOfMemoryDependence++;
+      if (edge->isMustDependence()){
+        this->numberOfMemoryMustDependence++;
+      }
+      continue ;
+    }
+
+    /*
+     * Handle variable dependences.
+     */
+    if (edge->isDataDependence()){
+      this->numberOfVariableDependence++;
+    }
+
+    /*
+     * Handle control dependences.
+     */
+    if (edge->isControlDependence()){
+      this->numberOfControlDependence++;
+    }
+  }
+
+  /*
+   * Collect the statistics for all functions.
    */
   for (auto &F : M) {
-    collectStatsForNodes(F);
-    collectStatsForPotentialEdges(F);
-    collectStatsForEdges(noelle, programLoops, F);
+    this->collectStatsForNodes(F);
+    this->collectStatsForPotentialEdges(programLoopForests, F);
+    this->collectStatsForLoopEdges(noelle, programLoopForests, F);
   }
 
   /*
@@ -69,66 +105,83 @@ bool PDGStats::runOnModule(Module &M) {
 }
 
 void PDGStats::collectStatsForNodes(Function &F) {
-  if (MDNode *argsM = F.getMetadata("noelle.pdg.args.id")) {
-    this->numberOfNodes += argsM->getNumOperands();
+  for (auto &arg : F.args()){
+    this->numberOfNodes++;
   }
-
   for (auto &B : F) {
-    for (auto &I : B) {
-      if (MDNode *m = I.getMetadata("noelle.pdg.inst.id")) {
-        this->numberOfNodes++;
-      }
-    }
+    this->numberOfNodes += B.size();
   }
 
   return;
 }
 
 void PDGStats::collectStatsForPotentialEdges (std::unordered_map<Function *, StayConnectedNestedLoopForest *> &programLoops, Function &F) {
-  uint64_t totMemoryInsts = 0;
+
+  /*
+   * Compute the total number of instructions that could access memory.
+   */
+  uint64_t totLoads = 0;
+  uint64_t totStores = 0;
+  uint64_t totCalls = 0;
   for (auto& inst : instructions(F)){
+    if (isa<LoadInst>(&inst)){
+      totLoads++;
+      continue ;
+    }
+    if (isa<StoreInst>(&inst)){
+      totStores++;
+      continue ;
+    }
     if (  false
-          || isa<LoadInst>(&inst)
-          || isa<StoreInst>(&inst)
           || isa<CallInst>(&inst)
           || isa<InvokeInst>(&inst)
       ){
-      totMemoryInsts++;
+      totCalls++;
+      continue ;
     }
   }
-  this->numberOfPotentialMemoryDependences += (totMemoryInsts * totMemoryInsts);
+  this->numberOfPotentialMemoryDependences += this->computePotentialEdges(totLoads, totStores, totCalls);
+
+  /*
+   * Compute the total number of memory dependences between instructions within the context of loops.
+   */
+  totLoads = 0;
+  totStores = 0;
+  totCalls = 0;
+  for (auto funcLoops : programLoops){
+    auto loopForest = funcLoops.second;
+    for (auto loopTree : loopForest->getTrees()){
+      auto visitor = [&totLoads, &totStores, &totCalls](StayConnectedNestedLoopForestNode *n, uint32_t level) -> bool {
+        auto currentLoop = n->getLoop();
+        for (auto inst : currentLoop->getInstructions()){
+          if (isa<LoadInst>(inst)){
+            totLoads++;
+            continue ;
+          }
+          if (isa<StoreInst>(inst)){
+            totStores++;
+            continue ;
+          }
+          if (  false
+                || isa<CallInst>(inst)
+                || isa<InvokeInst>(inst)
+            ){
+            totCalls++;
+            continue ;
+          }
+        }
+        return false;
+      };
+      loopTree->visitPreOrder(visitor);
+    }
+  }
+  this->numberOfPotentialMemoryDependences += this->computePotentialEdges(totLoads, totStores, totCalls);
 
   return ;
 }
 
-void PDGStats::collectStatsForEdges (Noelle &noelle, std::unordered_map<Function *, StayConnectedNestedLoopForest *> &programLoops, Function &F){
-  if (auto edgesM = F.getMetadata("noelle.pdg.edges")) {
-    this->numberOfEdges += edgesM->getNumOperands();
-
-    for (auto &operand : edgesM->operands()) {
-      if (MDNode *edgeM = dyn_cast<MDNode>(operand)) {
-
-        // Collect stats for memory dependence
-        if (edgeIsDependenceOf(edgeM, IS_MEMORY_DEPENDENCE)) {
-          this->numberOfMemoryDependence++;
-          if (edgeIsDependenceOf(edgeM, IS_MUST_DEPENDENCE)) {
-            this->numberOfMemoryMustDependence++;
-          }
-        }
-
-        // Collect stats for variable dependence
-        else if (edgeIsDependenceOf(edgeM, IS_MUST_DEPENDENCE)) {
-          this->numberOfVariableDependence++;
-        }
-        
-        // Collect stats for control dependence
-        else if (edgeIsDependenceOf(edgeM, IS_CONTROL_DEPENDENCE)) {
-          this->numberOfControlDependence++;
-        }
-      }
-    }
-  }
-
+void PDGStats::collectStatsForLoopEdges (Noelle &noelle, std::unordered_map<Function *, StayConnectedNestedLoopForest *> &programLoops, Function &F){
+  //TODO
   return;
 }
 
@@ -159,6 +212,30 @@ void PDGStats::printStats() {
 PDGStats::PDGStats()
   : ModulePass{ID} {
   return;
+}
+      
+uint64_t PDGStats::computePotentialEdges (uint64_t totLoads, uint64_t totStores, uint64_t totCalls){
+  uint64_t tot = 0;
+
+  /*
+   * Add the total number of dependences that could exist between memory instructions.
+   */
+  tot += (totStores * totStores);
+  tot += (totLoads * totStores * 2);
+
+  /*
+   * Add the total number of dependences that could exist between the call instructions.
+   * Notice that two call instructions could have RAW, WAW, and WAR. This is why each pair could have 3 dependences.
+   */
+  tot += (totCalls * totCalls * 3);
+
+  /*
+   * Add the total number of dependences between call and memory instructions.
+   */
+  tot += (totCalls * totStores * 3);
+  tot += (totCalls * totLoads * 2);
+
+  return tot;
 }
 
 PDGStats::~PDGStats() {
