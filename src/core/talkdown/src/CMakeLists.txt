@@ -25,12 +25,14 @@ include(AddLLVM)
 
 message(STATUS "LLVM_DIR IS ${LLVM_CMAKE_DIR}.")
 
-include_directories(${LLVM_INCLUDE_DIRS}
-  ${CMAKE_INSTALL_PREFIX}/include
-  ${CMAKE_INSTALL_PREFIX}/include/svf
+include_directories(
   ../../basic_utilities/include
   ../../loop_structure/include
-  ../include)
+  ../include
+  ${CMAKE_INSTALL_PREFIX}/include
+  ${CMAKE_INSTALL_PREFIX}/include/svf
+  ${LLVM_INCLUDE_DIRS}
+  )
 
 # Declare the LLVM pass to compile
 add_llvm_library(${PassName} MODULE ${Srcs})

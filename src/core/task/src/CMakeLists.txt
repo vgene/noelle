@@ -21,10 +21,11 @@ include(AddLLVM)
 
 message(STATUS "LLVM_DIR IS ${LLVM_CMAKE_DIR}.")
 
-include_directories(${LLVM_INCLUDE_DIRS} 
+include_directories(
   ../../basic_utilities/include 
   ../include 
   ./
+  ${LLVM_INCLUDE_DIRS}
   )
 
 # Declare the LLVM pass to compile
