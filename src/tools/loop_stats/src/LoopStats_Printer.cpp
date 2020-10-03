@@ -48,11 +48,17 @@ void LoopStats::printStatsHumanReadable (Hot *profiles) {
    * Compute the coverage of all loops.
    */
   uint64_t loopsDynamicInstructions = 0;
-  uint64_t allLCDeps = 0;
+  uint64_t allLLVMLCDeps = 0;
+  uint64_t allNoelleLCDeps = 0;
   for (auto idAndNoelleLoop : statsByLoopAccordingToNoelle) {
     auto noelleStats = idAndNoelleLoop.second;
     loopsDynamicInstructions += noelleStats->dynamicTotalInstructions;
-    allLCDeps += noelleStats->totalLCEdges;
+    allNoelleLCDeps += noelleStats->totalLCEdges;
+  }
+
+  for (auto idAndLLVMLoop : statsByLoopAccordingToLLVM) {
+    auto llvmStats = idAndLLVMLoop.second;
+    allLLVMLCDeps += llvmStats->totalLCEdges;
   }
 
   /*
@@ -103,13 +109,14 @@ void LoopStats::printStatsHumanReadable (Hot *profiles) {
   errs() << "Total statistics\n";
   errs() << " Noelle:\n";
   printPerLoopStats(profiles, &totalInfoNoelle);
-  errs() << "      Average number of dynamic instructions of sequential SCCs: " << averageSequentialSCCNoelle << "\n";
-  errs() << "      Average coverage of sequential SCCs: " << (averageSequentialSCCNoelle / ((double)profiles->getTotalInstructions())) << " %\n";
+  /* errs() << "      Average number of dynamic instructions of sequential SCCs: " << averageSequentialSCCNoelle << "\n"; */
+  /* errs() << "      Average coverage of sequential SCCs: " << (averageSequentialSCCNoelle / ((double)profiles->getTotalInstructions())) << " %\n"; */
+  /* errs() << "      Total number of LC deps remaining: " << allNoelleLCDeps << "\n"; */
   errs() << " LLVM:\n";
   printPerLoopStats(profiles, &totalInfoLLVM);
-  errs() << "      Average number of dynamic instructions of sequential SCCs: " << averageSequentialSCCLLVM << "\n";
-  errs() << "      Average coverage of sequential SCCs: " << (averageSequentialSCCLLVM / ((double)profiles->getTotalInstructions())) << " %\n";
-  errs() << " Total number of LC deps remaining: " << allLCDeps << "\n";
+  /* errs() << "      Average number of dynamic instructions of sequential SCCs: " << averageSequentialSCCLLVM << "\n"; */
+  /* errs() << "      Average coverage of sequential SCCs: " << (averageSequentialSCCLLVM / ((double)profiles->getTotalInstructions())) << " %\n"; */
+  /* errs() << "      Total number of LC deps remaining: " << allLLVMLCDeps << "\n"; */
 
   return;
 }

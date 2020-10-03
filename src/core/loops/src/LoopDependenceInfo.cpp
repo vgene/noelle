@@ -98,7 +98,7 @@ LoopDependenceInfo::LoopDependenceInfo(
    * Calculate various attributes on SCCs
    */
   auto interpretLCD = true;
-  LoopCarriedDependencies lcd(this->liSummary, DS, *loopSCCDAG, interpretLCD, interpretLCD);
+  LoopCarriedDependencies lcd(this->liSummary, DS, *loopSCCDAG);
   this->inductionVariables = new InductionVariableManager(liSummary, *invariantManager, SE, *loopSCCDAG, *environment);
   this->sccdagAttrs = SCCDAGAttrs(loopDG, loopSCCDAG, this->liSummary, SE, lcd, *inductionVariables, DS);
   this->domainSpaceAnalysis = new LoopIterationDomainSpaceAnalysis(liSummary, *this->inductionVariables, SE);
@@ -204,6 +204,17 @@ std::pair<PDG *, SCCDAG *> LoopDependenceInfo::createDGsForLoop (
   /*
    * Perform loop-aware memory dependence analysis to refine the loop dependence graph.
    */
+
+  // first conservatively mark all internal edges as loop-carried
+  for (auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges())) {
+    if (!loopDG->isInternal(edge->getIncomingT()) ||
+        !loopDG->isInternal(edge->getOutgoingT()))
+      continue;
+    if ( !edge->isMemoryDependence() )
+      continue;
+    edge->setLoopCarried(true);
+  }
+
   auto loopStructure = liSummary.getLoopNestingTreeRoot();
   auto loopExitBlocks = loopStructure->getLoopExitBasicBlocks();
   auto env = LoopEnvironment(loopDG, loopExitBlocks);
@@ -211,6 +222,8 @@ std::pair<PDG *, SCCDAG *> LoopDependenceInfo::createDGsForLoop (
   auto invManager = InvariantManager(loopStructure, loopDG);
   auto ivManager = InductionVariableManager(liSummary, invManager, SE, preRefinedSCCDAG, env);
   auto domainSpace = LoopIterationDomainSpaceAnalysis(liSummary, ivManager, SE);
+
+  // then remove LC deps with the LoopAwareMemDepAnalysis
   if (this->areLoopAwareAnalysesEnabled){
     refinePDGWithLoopAwareMemDepAnalysis(loopDG, l, loopStructure, lcdUsingLoopDGEdges, aa, talkdown, &domainSpace);
   }

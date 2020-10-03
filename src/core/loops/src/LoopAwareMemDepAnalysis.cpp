@@ -8,8 +8,9 @@
 
 using namespace llvm;
 
-#define         USE_TALKDOWN
-#define          USE_SCAF
+static cl::opt<bool> SCAFDisable("loop-aware-scaf-disable", cl::ZeroOrMore, cl::Hidden, cl::desc("Disable SCAF loop aware dependence analyses"));
+static cl::opt<bool> LIDSDisable("loop-aware-lids-disable", cl::ZeroOrMore, cl::Hidden, cl::desc("Disable LIDS loop aware dependence analyses"));
+static cl::opt<bool> TalkdownDisable("loop-aware-talkdown-disable", cl::ZeroOrMore, cl::Hidden, cl::desc("Disable Talkdown loop aware dependence analyses"));
 
 static int talkdownRemoved;
 void llvm::refinePDGWithLoopAwareMemDepAnalysis(
@@ -21,25 +22,23 @@ void llvm::refinePDGWithLoopAwareMemDepAnalysis(
   Talkdown *talkdown,
   LoopIterationDomainSpaceAnalysis *LIDS
 ) {
+  // @loopDG has all edges with a memory dependence marked as loopCarried. Thus,
+  // we only need to do e.setLoopCarried(false) or removeEdge(e)
 
   // TODO: add here other types of loopAware refinements of the PDG
 
-#ifdef USE_SCAF
-  if (loopAA) {
+  if (loopAA && SCAFDisable.getNumOccurrences() == 0) {
     refinePDGWithSCAF(loopDG, l, loopAA);
   }
-#endif
 
-  if (LIDS) {
+  if (LIDS && LIDSDisable.getNumOccurrences() == 0) {
     refinePDGWithLIDS(loopDG, loopStructure, LCD, LIDS);
   }
 
-#ifdef USE_TALKDOWN
-  if (talkdown) {
+  if (talkdown && TalkdownDisable.getNumOccurrences() == 0) {
     refinePDGWithTalkdown(loopDG, l, talkdown);
   }
   errs() << "Talkdown removed " << talkdownRemoved << "\n";
-#endif
 }
 
 void llvm::refinePDGWithTalkdown(PDG *loopDG, Loop *l, Talkdown *talkdown)
@@ -48,17 +47,6 @@ void llvm::refinePDGWithTalkdown(PDG *loopDG, Loop *l, Talkdown *talkdown)
   // This is very naive, since the rodinia benchmarks have such simple pragmas
   /* if ( !talkdown->containsAnnotation(l) ) */
   /*   return; */
-
-#if !defined(USE_SCAF) && defined(USE_TALKDOWN)
-  for (auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges())) {
-    if (!loopDG->isInternal(edge->getIncomingT()) ||
-        !loopDG->isInternal(edge->getOutgoingT()))
-      continue;
-    if ( !edge->isMemoryDependence() )
-      continue;
-    edge->setLoopCarried(true);
-  }
-#endif
 
   // XXX this is a hack since the loop pointer changed and Talkdown couldn't find the node for the loop
   MDNode *lmd = l->getHeader()->getFirstNonPHIOrDbgOrLifetime()->getMetadata("note.noelle");
@@ -150,10 +138,13 @@ void llvm::refinePDGWithSCAF(PDG *loopDG, Loop *l, liberty::LoopAA *loopAA) {
 		// set LoopCarried bit for all the non-disproved LC edges
 		uint8_t lcDepTypes = depTypes - disprovedLCDepTypes;
 		for (uint8_t i = 0; i <= 2; ++i) {
+		  auto &e = edges[i];
 			if (lcDepTypes & (1 << i)) {
-				auto &e = edges[i];
 				e->setLoopCarried(true);
+        break;
 			}
+      if ( e )
+        e->setLoopCarried(false);
 		}
 
 		// for every disproved loop-carried dependence
