@@ -1,0 +1,16 @@
+ # IMPACT Public Release (www.crhc.uiuc.edu/IMPACT)            Version 2.33  #
+ # IMPACT Trimaran Release (www.trimaran.org)                  July 12, 1999 #
+###############################################################################
+#  Run 'read_exec_info --help | more' for documentation.
+#
+#  Source of this file's information:
+#     SPEC (http://www.spec.org/)
+#
+#  Revision history for this file:
+###############################################################################
+
+DESCRIPTION="SPEC2006/benchspec/input.test"
+SETUP=ln -sf ../inputs/test.avi .
+PROFILEARGS=2048 10 1
+TESTARGS=2048 10 1
+CLEANUP=rm -f result.txt
