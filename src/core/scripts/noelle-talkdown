@@ -14,3 +14,5 @@ echo $cmdToExecute ;
 
 # Execute the command
 eval $cmdToExecute 
+
+rm -f $tmpFile
