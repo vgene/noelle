@@ -11,7 +11,7 @@ ANALYSES="${AA} ${LOOPAA} -scalar-evolution -loops -domtree -postdomtree"
 
 WPAPASS="-load ${installDir}/lib/libSvf.so -load ${installDir}/lib/libCudd.so -stat=false"
 SCAFPASS="-load ${installDir}/lib/libUtilities.so -load ${installDir}/lib/libMemoryAnalysisModules.so"
-PDGPASS="-load ${installDir}/lib/AllocAA.so -load ${installDir}/lib/Talkdown.so -load ${installDir}/lib/CallGraph.so -load ${installDir}/lib/PDGAnalysis.so"
+PDGPASS="-load ${installDir}/lib/AllocAA.so -load ${installDir}/lib/PDGAnalysis.so -load ${installDir}/lib/Talkdown.so -load ${installDir}/lib/CallGraph.so"
 
 
 ########### Transformations
