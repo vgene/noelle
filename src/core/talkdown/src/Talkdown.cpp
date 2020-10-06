@@ -10,6 +10,8 @@
 // #include "liberty/LoopProf/Targets.h"
 // #include "liberty/Utilities/ReportDump.h"
 
+#include "PDGAnalysis.hpp"
+
 #include "Talkdown.hpp"
 #include "Node.hpp"
 #include "AnnotationParser.hpp"
@@ -34,11 +36,11 @@ namespace {
 
     bool runOnFunction(Function &F)
     {
-      if ( !F.isDeclaration() )
+      if ( F.isDeclaration() )
         return false;
 
       bool modified = splitBasicBlocksByAnnotation(F);
-      modified |= splitBasicBlocksByAnnotation(F);
+      modified |= fixBasicBlockAnnotations(F);
 
       return modified;
     }
@@ -115,12 +117,27 @@ namespace {
       for ( auto &bb : F )
       {
         MDNode *md = nullptr;
+        MDNode *check_md = nullptr;
+
+        // Making sure that splitBasicBlocksByAnnotation() worked correctly
+        for ( auto &i : bb )
+        {
+          md = i.getMetadata( "note.noelle" );
+          if ( !md )
+            continue;
+          if ( !check_md )
+            check_md = md;
+          assert(check_md == md &&
+              "Mismatch found within a basic block after running splitBasicBlocksByAnnotation()" );
+        }
 
         for ( auto &i : bb )
         {
           md = i.getMetadata( "note.noelle" );
           if ( md )
+          {
             break;
+          }
         }
 
         // if no metadata in the basic block
@@ -133,6 +150,7 @@ namespace {
           MDNode *meta = i.getMetadata("note.noelle");
           if ( !meta )
           {
+            errs() << "Setting noelle metadata for instruction " << *&i << "\n";
             i.setMetadata("note.noelle", md);
             modified |= true;
           }
@@ -153,8 +171,6 @@ namespace {
 
   bool Talkdown::runOnModule(Module &M)
   {
-    bool modified = false;
-
     if ( !this->enabled )
       return false;
 
@@ -166,7 +182,7 @@ namespace {
 
       LoopInfo &loop_info = getAnalysis<LoopInfoWrapperPass>(f).getLoopInfo();
       FunctionTree tree = FunctionTree( &f );
-      modified |= tree.constructTree( &f, loop_info );
+      tree.constructTree( &f, loop_info );
       function_trees.push_back( tree );
     }
 
@@ -188,6 +204,7 @@ namespace {
   void Talkdown::getAnalysisUsage(AnalysisUsage &AU) const
   {
     AU.addRequired<LoopInfoWrapperPass>();
+    AU.addRequired<PDGAnalysis>();
     // AU.addRequiredTransitive<SplitByAnnotation>();
     // AU.addRequired<liberty::ModuleLoops>();
     AU.setPreservesAll();
@@ -236,7 +253,7 @@ namespace {
 } // namespace llvm
 
 char llvm::Talkdown::ID = 0;
-static RegisterPass<Talkdown> X("Talkdown", "The Talkdown pass");
+static RegisterPass<Talkdown> X("Talkdown", "The Talkdown pass", false, true);
 
 char llvm::SplitByAnnotation::ID = 0;
 static RegisterPass<SplitByAnnotation> Y("talkdown-split-basic-blocks", "Split basic blocks before invoking -Talkdown pass");
