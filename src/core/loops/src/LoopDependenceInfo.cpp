@@ -209,12 +209,15 @@ std::pair<PDG *, SCCDAG *> LoopDependenceInfo::createDGsForLoop (
   for (auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges())) {
     if (!loopDG->isInternal(edge->getIncomingT()) ||
         !loopDG->isInternal(edge->getOutgoingT()))
+    {
+      // just to be extra sure that nothing is being set as LC outside the loop
+      edge->setLoopCarried(false);
       continue;
+    }
     if ( !edge->isMemoryDependence() )
       continue;
     edge->setLoopCarried(true);
   }
-
   auto loopStructure = liSummary.getLoopNestingTreeRoot();
   auto loopExitBlocks = loopStructure->getLoopExitBasicBlocks();
   auto env = LoopEnvironment(loopDG, loopExitBlocks);

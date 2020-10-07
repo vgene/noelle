@@ -55,6 +55,9 @@ void LoopStats::collectStatsForLoop (Hot *profiles, LoopDependenceInfo &LDI) {
          !loopDG->isInternal(edge->getOutgoingT()) ||
          !edge->isLoopCarriedDependence() )
       continue;
+    errs() << "LC edge:\n";
+    edge->print(errs()) << "\n";
+    /* edge->print() << "\n"; */
     statsForLoop->totalLCEdges++;
   }
 

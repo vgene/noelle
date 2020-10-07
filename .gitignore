@@ -30,3 +30,6 @@ tests/regression/**/Parallelizer_utils.cpp
 tests/performance/**/Parallelizer_utils.cpp
 tests/regression/**/Makefile
 tests/performance/**/Makefile
+
+# clangd files for LSP vim client
+.clangd

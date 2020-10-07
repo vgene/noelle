@@ -65,16 +65,17 @@ void llvm::refinePDGWithTalkdown(PDG *loopDG, Loop *l, Talkdown *talkdown)
       continue;
 
     // only target memory dependences (???)
-    if (!edge->isMemoryDependence())
-      continue;
+    /* if (!edge->isMemoryDependence()) */
+    /*   continue; */
 
     // don't remove edges that aren't loop-carried
     if (!edge->isLoopCarriedDependence())
       continue;
 
-    errs() << "Removed a LC dep with talkdown!\n";
-    talkdownRemoved++;
+    errs() << "Removed a LC dep with talkdown:\n";
+    edge->print(errs()) << "\n";
     edge->setLoopCarried(false);
+    talkdownRemoved++;
   }
 }
 
