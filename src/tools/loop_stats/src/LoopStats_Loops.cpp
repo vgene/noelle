@@ -38,6 +38,7 @@ void LoopStats::collectStatsForLoop (Hot *profiles, LoopDependenceInfo &LDI) {
   auto statsForLoop = new Stats();
   statsByLoopAccordingToNoelle.insert(std::make_pair(LDI.getID(), statsForLoop));
   statsForLoop->loopID = loopStructure->getID();
+  errs() << "First instruction in loop " << statsForLoop->loopID << ": " << *loopStructure->getEntryInstruction() << "\n";
 
   collectStatsOnNoelleIVs(profiles, LDI, statsForLoop);
   collectStatsOnNoelleSCCs(profiles, LDI, statsForLoop);

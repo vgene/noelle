@@ -41,6 +41,7 @@ namespace llvm {
         int64_t numberOfSCCs = 0;
         int64_t numberOfSequentialSCCs = 0;
         int64_t dynamicInstructionsOfSequentialSCCs = 0;
+        int64_t staticTotalInstructions = 0;
         uint64_t dynamicTotalInstructions = 0;
         uint64_t totalLCEdges = 0;
 
@@ -56,6 +57,7 @@ namespace llvm {
           res.numberOfSCCs = this->numberOfSCCs + obj.numberOfSCCs;
           res.numberOfSequentialSCCs = this->numberOfSequentialSCCs + obj.numberOfSequentialSCCs;
           res.dynamicInstructionsOfSequentialSCCs = this->dynamicInstructionsOfSequentialSCCs + obj.dynamicInstructionsOfSequentialSCCs;
+          res.staticTotalInstructions = this->staticTotalInstructions + obj.staticTotalInstructions;
           res.dynamicTotalInstructions = this->dynamicTotalInstructions + obj.dynamicTotalInstructions;
           res.totalLCEdges = this->totalLCEdges + obj.totalLCEdges;
 

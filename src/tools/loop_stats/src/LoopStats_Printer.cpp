@@ -34,6 +34,7 @@ void LoopStats::printPerLoopStats (Hot *profiles, Stats *stats) {
   errs() << "      Number of nodes in SCCDAG: " << stats->numberOfNodesInSCCDAG << "\n";
   errs() << "      Number of SCCs: " << stats->numberOfSCCs << "\n";
   errs() << "      Number of sequential SCCs: " << stats->numberOfSequentialSCCs << "\n";
+  errs() << "      Number of static instructions in this loop: " << stats->staticTotalInstructions << "\n";
   errs() << "      Number of dynamic instructions executed in sequential SCCs: " << stats->dynamicInstructionsOfSequentialSCCs << "\n";
   errs() << "      Number of remaining LC deps: " << stats->totalLCEdges << "\n";
 

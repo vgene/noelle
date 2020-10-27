@@ -55,8 +55,9 @@ void llvm::refinePDGWithTalkdown(PDG *loopDG, Loop *l, Talkdown *talkdown)
   if ( l->getParentLoop() && lmd == l->getParentLoop()->getHeader()->getFirstNonPHIOrDbgOrLifetime()->getMetadata("note.noelle") )
     return;
 
-  errs() << "Found real annotation for loop at ";
-  liberty::printInstDebugInfo(l->getHeader()->getFirstNonPHIOrDbgOrLifetime());
+  Instruction *first_inst = &*l->getHeader()->begin();
+  errs() << "Found real annotation for loop at " << *first_inst << "\n\t";
+  liberty::printInstDebugInfo(first_inst);
   errs() << "\n";
 
   for (auto edge : make_range(loopDG->begin_edges(), loopDG->end_edges())) {

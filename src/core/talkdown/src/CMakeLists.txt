@@ -29,6 +29,9 @@ include_directories(
   ../../basic_utilities/include
   ../../loop_structure/include
   ../../pdg/include
+  ../../alloca_aa/include
+  ../../dataflow/include
+  ../../callgraph/include
   ../include
   ${CMAKE_INSTALL_PREFIX}/include
   ${CMAKE_INSTALL_PREFIX}/include/svf

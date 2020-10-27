@@ -5,7 +5,7 @@
 
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #pragma once
@@ -47,7 +47,7 @@ namespace llvm {
        * Constructor
        */
       SCCAttrs (
-        SCC *s, 
+        SCC *s,
         AccumulatorOpInfo &opInfo,
         LoopsSummary &LIS
         );
@@ -73,7 +73,7 @@ namespace llvm {
       bool mustExecuteSequentially (void) const ;
 
       /*
-       * Return true if a reduction transformation can be applied to the SCC. 
+       * Return true if a reduction transformation can be applied to the SCC.
        * Return false otherwise.
        */
       bool canExecuteReducibly (void) const ;
@@ -87,7 +87,7 @@ namespace llvm {
       /*
        * Return true if it is safe to clone the SCC.
        * Return false otherwise.
-       * 
+       *
        * TODO: Break apart into two separate APIs:
        * canBeDirectlyClonedAndRepeatableEachIteration
        * canBeDirectlyClonedButExecutedOnlyOnceEachIteration
@@ -201,7 +201,7 @@ namespace llvm {
 
       bool isClonable;
       bool hasIV;
-  
+
       void collectPHIsAndAccumulators (LoopStructure &LS);
       void collectControlFlowInstructions (void);
   };

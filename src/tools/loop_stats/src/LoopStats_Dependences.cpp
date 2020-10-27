@@ -121,6 +121,8 @@ void LoopStats::collectStatsOnSCCDAG (Hot *profiles, SCCDAG *sccdag, SCCDAGAttrs
     statsForLoop->numberOfSequentialSCCs++;
     statsForLoop->dynamicInstructionsOfSequentialSCCs += profiles->getTotalInstructions(scc);
   }
+  if ( ldi != nullptr )
+    statsForLoop->staticTotalInstructions = ldi->getLoopStructure()->getNumberOfInstructions();
 
   return ;
 }
