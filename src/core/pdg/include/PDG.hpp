@@ -26,8 +26,9 @@
 
 using namespace std;
 using namespace llvm;
+using namespace llvm::noelle;
 
-namespace llvm {
+namespace llvm::noelle {
 
   /*
    * Program Dependence Graph.
@@ -89,7 +90,7 @@ namespace llvm {
         bool includeControlDependences,
         bool includeMemoryDataDependences,
         bool includeRegisterDataDependences,
-        std::function<bool (Value *toValue, DataDependenceType ddType)> functionToInvokePerDependence
+        std::function<bool (Value *to, DGEdge<Value> *dependence)> functionToInvokePerDependence
         );
 
       /*
@@ -106,7 +107,7 @@ namespace llvm {
         bool includeControlDependences,
         bool includeMemoryDataDependences,
         bool includeRegisterDataDependences,
-        std::function<bool (Value *fromValue, DataDependenceType ddType)> functionToInvokePerDependence
+        std::function<bool (Value *fromValue, DGEdge<Value> *dependence)> functionToInvokePerDependence
         );
 
       /*

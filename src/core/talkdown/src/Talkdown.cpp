@@ -22,6 +22,7 @@
 #include <string>
 
 using namespace llvm;
+using namespace llvm::noelle;
 using namespace AutoMP;
 
 namespace llvm

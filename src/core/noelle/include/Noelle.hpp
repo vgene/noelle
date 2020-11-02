@@ -21,7 +21,7 @@
 #include "StayConnectedNestedLoopForest.hpp"
 #include "Talkdown.hpp"
 
-#include "MemoryAnalysisModules/LoopAA.h"
+#include "scaf/MemoryAnalysisModules/LoopAA.h"
 
 namespace llvm::noelle {
 
@@ -62,6 +62,16 @@ namespace llvm::noelle {
         Function *function,
         double minimumHotness
       );
+
+      LoopDependenceInfo * getInnermostLoopThatContains (
+        const std::vector<LoopDependenceInfo *> &loops,
+        Instruction *inst
+        );
+
+      LoopDependenceInfo * getInnermostLoopThatContains (
+        const std::vector<LoopDependenceInfo *> &loops,
+        BasicBlock *bb
+        );
 
       std::vector<LoopStructure *> * getLoopStructures (void) ;
 
@@ -165,6 +175,8 @@ namespace llvm::noelle {
 
       bool shouldLoopsBeHoistToMain (void) const ;
 
+      bool canFloatsBeConsideredRealNumbers (void) const ;
+
       std::vector<Function *> * getModuleFunctionsReachableFrom (
         Module *module,
         Function *startingPoint
@@ -184,6 +196,7 @@ namespace llvm::noelle {
 
     private:
       Verbosity verbose;
+      bool enableFloatAsReal;
       double minHot;
       Module *program;
       Hot *profiles;

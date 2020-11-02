@@ -4,7 +4,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/Analysis/LoopInfo.h"
 
-#include "Utilities/ModuleLoops.h"
+#include "scaf/Utilities/ModuleLoops.h"
 #include "Node.hpp"
 #include "Annotation.hpp"
 

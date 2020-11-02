@@ -35,6 +35,7 @@ include_directories(
   ../include
   ${CMAKE_INSTALL_PREFIX}/include
   ${CMAKE_INSTALL_PREFIX}/include/svf
+  ${CMAKE_INSTALL_PREFIX}/include/scaf
   ${LLVM_INCLUDE_DIRS}
   )
 

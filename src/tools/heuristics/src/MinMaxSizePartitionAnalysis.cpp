@@ -10,7 +10,10 @@
  */
 #include "MinMaxSizePartitionAnalysis.hpp"
 
-void llvm::MinMaxSizePartitionAnalysis::checkIfShouldMerge (SCCSet *sA, SCCSet *sB) {
+using namespace llvm;
+using namespace llvm::noelle;
+
+void MinMaxSizePartitionAnalysis::checkIfShouldMerge (SCCSet *sA, SCCSet *sB) {
 
   /*
    * Hard stop merging once we have fewer partitions than cores

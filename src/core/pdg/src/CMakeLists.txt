@@ -37,6 +37,7 @@ include_directories(
   ../../basic_utilities/include
   ../../loops/include
   ../../alloc_aa/include 
+  ../../talkdown/include 
   ../../dataflow/include
   ../../callgraph/include
   ../include

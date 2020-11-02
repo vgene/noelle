@@ -33,11 +33,12 @@ all: baseline testseq $(OPTIMIZED)
 
 %.bc: %.c
 	$(CC) $(INCLUDES) $(FRONTEND_FLAGS) -c $< -o $@
-	llvm-dis $@
+
+%.ll: %.bc
+	llvm-dis $^
 
 %.bc: %.cpp
 	$(CPP) $(INCLUDES) $(FRONTEND_FLAGS) -std=c++14 -c $< -o $@
-	llvm-dis $@
 
 baseline: baseline.bc
 	$(CPP) $(OPT_LEVEL) $^ -o $@
@@ -96,6 +97,12 @@ input.txt:
 
 test_correctness: input.txt baseline $(OPTIMIZED)
 	./baseline `cat input.txt` &> output_baseline.txt ;
+	./parallelized `cat input.txt` &> output_parallelized.txt ;
+	cmp output_baseline.txt output_parallelized.txt || (echo "Error $$?"; exit 1)
+	./parallelized `cat input.txt` &> output_parallelized.txt ;
+	cmp output_baseline.txt output_parallelized.txt || (echo "Error $$?"; exit 1)
+	./parallelized `cat input.txt` &> output_parallelized.txt ;
+	cmp output_baseline.txt output_parallelized.txt || (echo "Error $$?"; exit 1)
 	./parallelized `cat input.txt` &> output_parallelized.txt ;
 	cmp output_baseline.txt output_parallelized.txt || (echo "Error $$?"; exit 1)
 	echo "Success"

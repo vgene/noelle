@@ -16,6 +16,7 @@
 #include "PDGAnalysis.hpp"
 
 using namespace llvm;
+using namespace llvm::noelle;
 
 noelle::CallGraph * PDGAnalysis::getProgramCallGraph (void){
   auto cg = new noelle::CallGraph(*M, this->callGraph);

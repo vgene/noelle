@@ -7,7 +7,7 @@
 
 #include "Noelle.hpp"
 
-using namespace llvm;
+using namespace llvm::noelle ;
 
 namespace {
 
@@ -42,7 +42,7 @@ namespace {
        * Print dependences
        */
       if (this->printDependences){
-        auto iterF = [](Value *src, DataDependenceType d) -> bool {
+        auto iterF = [](Value *src, DGEdge<Value> *dep) -> bool {
           errs() << "   needs " << *src << "\n";
           return false;
         };

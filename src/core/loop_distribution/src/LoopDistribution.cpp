@@ -11,6 +11,7 @@
 #include "LoopDistribution.hpp"
 
 using namespace llvm;
+using namespace llvm::noelle;
  
 bool LoopDistribution::splitLoop (
   LoopDependenceInfo const &LDI, 
@@ -180,7 +181,7 @@ void LoopDistribution::recursivelyCollectDependencies (
   std::vector<Instruction *> queue = {inst};
   auto BBs = LDI.getLoopStructure()->getBasicBlocks();
   auto pdg = LDI.getLoopDG();
-  auto fn = [&BBs, &queue, &toPopulate](Value *from, DataDependenceType ddType) -> bool {
+  auto fn = [&BBs, &queue, &toPopulate](Value *from, DGEdge<Value> *dep) -> bool {
     if (!isa<Instruction>(from)) {
       return false;
     }
@@ -254,7 +255,7 @@ bool LoopDistribution::splitWouldRequireForwardingDataDependencies (
   ){
   auto BBs = LDI.getLoopStructure()->getBasicBlocks();
   auto fromFn = [&BBs, &instsToPullOut, &instsToClone]
-    (Value *from, DataDependenceType ddType) -> bool {
+    (Value *from, DGEdge<Value> *dependence) -> bool {
     if (!isa<Instruction>(from)) {
       return false;
     }
@@ -282,7 +283,7 @@ bool LoopDistribution::splitWouldRequireForwardingDataDependencies (
     }
     return false;
   };
-  auto toFn = [&BBs, &instsToPullOut](Value *to, DataDependenceType ddType) -> bool {
+  auto toFn = [&BBs, &instsToPullOut](Value *to, DGEdge<Value> *dependence) -> bool {
     if (!isa<Instruction>(to)) {
       return false;
     }

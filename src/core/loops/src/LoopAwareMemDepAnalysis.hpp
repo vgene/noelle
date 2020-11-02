@@ -5,13 +5,13 @@
 #include "SystemHeaders.hpp"
 
 #include "PDG.hpp"
-#include "MemoryAnalysisModules/LoopAA.h"
+#include "scaf/MemoryAnalysisModules/LoopAA.h"
 #include "LoopCarriedDependencies.hpp"
 #include "LoopIterationDomainSpaceAnalysis.hpp"
 #include "LoopsSummary.hpp"
 #include "Talkdown.hpp"
 
-namespace llvm {
+namespace llvm::noelle {
 
 // Perform loop-aware memory dependence analysis to refine the loop PDG
 void refinePDGWithLoopAwareMemDepAnalysis(

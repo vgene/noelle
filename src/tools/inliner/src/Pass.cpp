@@ -12,6 +12,7 @@
 #include "Noelle.hpp"
 
 using namespace llvm;
+using namespace llvm::noelle;
 
 /*
  * Options of the dependence graph simplifier pass.
@@ -34,7 +35,7 @@ void Inliner::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 // Next there is code to register your pass to "opt"
-char llvm::Inliner::ID = 0;
+char Inliner::ID = 0;
 static RegisterPass<Inliner> X("inliner", "Dependence Graph modifier");
 
 // Next there is code to register your pass to "clang"

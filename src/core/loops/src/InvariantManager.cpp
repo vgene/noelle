@@ -11,6 +11,7 @@
 #include "Invariants.hpp"
 
 using namespace llvm;
+using namespace llvm::noelle;
 
 InvariantManager::InvariantManager (
   LoopStructure *loop,
@@ -64,9 +65,6 @@ InvariantManager::InvarianceChecker::InvarianceChecker (
   PDG *loopDG,
   std::unordered_set<Instruction *> &invariants
 ) : loop{loop}, loopDG{loopDG}, invariants{invariants} {
-
-  this->isEvolving = std::bind(&InvarianceChecker::isEvolvingValue, this, std::placeholders::_1, std::placeholders::_2);
-
   for (auto inst : loop->getInstructions()){
 
     /*
@@ -99,6 +97,9 @@ InvariantManager::InvarianceChecker::InvarianceChecker (
       this->invariants.insert(inst);
     }
 
+    auto isEvolving = [this](Value *toValue, DGEdge<Value> *dep){
+      return this->isEvolvingValue(toValue, dep);
+    };
     auto canEvolve = loopDG->iterateOverDependencesTo(inst, false, true, true, isEvolving);
 
     /*
@@ -125,7 +126,7 @@ InvariantManager::InvarianceChecker::InvarianceChecker (
 
 }
 
-bool InvariantManager::InvarianceChecker::isEvolvingValue (Value *toValue, DataDependenceType ddType) {
+bool InvariantManager::InvarianceChecker::isEvolvingValue (Value *toValue, DGEdge<Value> *dep) {
 
   /*
    * Check if @toValue isn't an instruction.
@@ -143,9 +144,11 @@ bool InvariantManager::InvarianceChecker::isEvolvingValue (Value *toValue, DataD
   }
 
   /*
-   * If the instruction is included in the loop and this is a memory dependence, the value may evolve
+   * The instruction is included in the loop.
+   *
+   * If the instruction is a memory dependence, the value may evolve.
    */
-  if (ddType != DataDependenceType::DG_DATA_NONE){
+  if (dep->isMemoryDependence()){
     return true;
   }
 
@@ -187,7 +190,10 @@ bool InvariantManager::InvarianceChecker::isEvolvingValue (Value *toValue, DataD
   }
   this->dependencyValuesBeingChecked.insert(toInst);
 
-  bool canEvolve = loopDG->iterateOverDependencesTo(toInst, false, true, true, isEvolving);
+  auto isEvolving = [this](Value *toValue, DGEdge<Value> *dep){
+    return this->isEvolvingValue(toValue, dep);
+  };
+  auto canEvolve = loopDG->iterateOverDependencesTo(toInst, false, true, true, isEvolving);
   if (canEvolve) {
     invariants.erase(toInst);
     notInvariants.insert(toInst);

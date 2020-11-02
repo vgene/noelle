@@ -15,14 +15,16 @@
 #include "LoopAwareMemDepAnalysis.hpp"
 
 using namespace llvm;
+using namespace llvm::noelle;
 
 LoopDependenceInfo::LoopDependenceInfo(
   PDG *fG,
   Loop *l,
   DominatorSummary &DS,
   ScalarEvolution &SE,
-  uint32_t maxCores
-) : LoopDependenceInfo{fG, l, DS, SE, maxCores, {}, nullptr, nullptr, true} {
+  uint32_t maxCores,
+  bool enableFloatAsReal
+) : LoopDependenceInfo{fG, l, DS, SE, maxCores, enableFloatAsReal, {}, nullptr, nullptr, true} {
 
   return ;
 }
@@ -33,8 +35,9 @@ LoopDependenceInfo::LoopDependenceInfo(
   DominatorSummary &DS,
   ScalarEvolution &SE,
   uint32_t maxCores,
+  bool enableFloatAsReal,
   liberty::LoopAA *aa
-) : LoopDependenceInfo{fG, l, DS, SE, maxCores, {}, aa, nullptr, true} {
+) : LoopDependenceInfo{fG, l, DS, SE, maxCores, enableFloatAsReal, {}, aa, nullptr, true} {
 
   return ;
 }
@@ -45,8 +48,9 @@ LoopDependenceInfo::LoopDependenceInfo(
   DominatorSummary &DS,
   ScalarEvolution &SE,
   uint32_t maxCores,
+  bool enableFloatAsReal,
   std::unordered_set<LoopDependenceInfoOptimization> optimizations
-) : LoopDependenceInfo{fG, l, DS, SE, maxCores, optimizations, nullptr, nullptr, true} {
+) : LoopDependenceInfo{fG, l, DS, SE, maxCores, enableFloatAsReal, optimizations, nullptr, nullptr, true} {
 
   return ;
 }
@@ -57,6 +61,7 @@ LoopDependenceInfo::LoopDependenceInfo(
   DominatorSummary &DS,
   ScalarEvolution &SE,
   uint32_t maxCores,
+  bool enableFloatAsReal,
   std::unordered_set<LoopDependenceInfoOptimization> optimizations,
   liberty::LoopAA *loopAA,
   Talkdown *talkdown,
@@ -100,7 +105,7 @@ LoopDependenceInfo::LoopDependenceInfo(
   auto interpretLCD = true;
   LoopCarriedDependencies lcd(this->liSummary, DS, *loopSCCDAG);
   this->inductionVariables = new InductionVariableManager(liSummary, *invariantManager, SE, *loopSCCDAG, *environment);
-  this->sccdagAttrs = SCCDAGAttrs(loopDG, loopSCCDAG, this->liSummary, SE, lcd, *inductionVariables, DS);
+  this->sccdagAttrs = SCCDAGAttrs(enableFloatAsReal, loopDG, loopSCCDAG, this->liSummary, SE, lcd, *inductionVariables, DS);
   this->domainSpaceAnalysis = new LoopIterationDomainSpaceAnalysis(liSummary, *this->inductionVariables, SE);
 
   /*
