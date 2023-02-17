@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 - 2022  Angelo Matni, Simone Campanoni, Brian Homerding
+ * Copyright 2016 - 2023  Angelo Matni, Simone Campanoni, Brian Homerding
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -32,10 +32,9 @@
 #include "noelle/core/SCCDAGAttrs.hpp"
 #include "noelle/core/LoopIterationDomainSpaceAnalysis.hpp"
 #include "noelle/core/LoopTransformationsOptions.hpp"
+#include "noelle/core/AliasAnalysisEngine.hpp"
 
 namespace llvm::noelle {
-
-void *getSCAFLoopAA(void);
 
 class LoopDependenceInfo {
 public:
@@ -165,6 +164,8 @@ public:
    * Deconstructor.
    */
   ~LoopDependenceInfo();
+
+  static std::set<AliasAnalysisEngine *> getLoopAliasAnalysisEngines(void);
 
 private:
   /*
